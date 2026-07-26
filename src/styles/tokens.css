@@ -1,0 +1,20 @@
+/*
+  Golden Sky Studio — design tokens
+  Paleta oficial (especificação, seção 9): azul #031A5B, dourado #E4B548.
+  As demais tonalidades são derivadas dessas duas cores para uso em
+  gradientes, hover states e fundos suaves — nunca cores novas soltas.
+*/
+@theme {
+  --color-navy-950: #02113b;
+  --color-navy-900: #031a5b;
+  --color-navy-800: #293c74;
+  --color-navy-700: #4f5f8c;
+  --color-navy-100: #ebedf2;
+
+  --color-gold-700: #b6913a;
+  --color-gold-500: #e4b548;
+  --color-gold-300: #edcf88;
+  --color-gold-100: #fbf4e4;
+
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
