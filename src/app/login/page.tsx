@@ -47,10 +47,16 @@ export default function LoginPage() {
             ? "Esse link de convite expirou ou já foi usado. Peça um novo convite para o administrador."
             : decodeURIComponent(errorDescription || "Não foi possível validar o link.").replace(/\+/g, " ")
         );
+        // Sem token válido aqui — seguro limpar a URL imediatamente.
+        window.history.replaceState(null, "", window.location.pathname);
       } else if (type === "invite" || type === "recovery") {
         setMode("set-password");
+        // Não mexe na URL aqui: o cliente Supabase ainda está processando o
+        // access_token do hash de forma assíncrona (mesma leitura que fizemos
+        // acima). Se limpássemos o hash agora, entraríamos numa corrida e a
+        // sessão nunca seria estabelecida a tempo — o próprio Supabase limpa
+        // a URL sozinho quando termina de processar o token.
       }
-      window.history.replaceState(null, "", window.location.pathname);
     }
 
     processHash();
