@@ -52,5 +52,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Ignora assets estáticos (arquivos com extensão, ex: /branding/logo.png)
+  // além dos internos do Next — sem isso, o middleware bloqueava a própria logo.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };
