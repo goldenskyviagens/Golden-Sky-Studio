@@ -44,9 +44,11 @@ export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[])
   txt += `💰 *INVESTIMENTO PARA GARANTIR AGORA:*\n`;
   txt += `💰 R$ ${fmtMoney(op.precoPix)} NO PIX\n`;
   if (op.semJurosAte) {
-    const p = parseFloat(op.precoPix) || 0;
+    // Mostra o valor total, não dividido por parcela: no parcelamento sem
+    // juros da companhia a 1ª parcela costuma vir mais alta (taxas embutidas),
+    // então dividir igualmente pelo número de parcelas seria incorreto.
     const n = Number(op.semJurosAte);
-    txt += `✅ R$ ${fmtMoney(p / n)} EM ATÉ ${n}X SEM JUROS\n`;
+    txt += `✅ R$ ${fmtMoney(op.precoPix)} EM ATÉ ${n}X SEM JUROS\n`;
   }
   if (destaqueRow) txt += `💳 R$ ${fmtMoney(destaqueRow.valor)} EM ${op.parcelaDestaque}X NO CARTÃO (TOTAL: R$ ${fmtMoney(destaqueRow.total)})\n`;
   txt += `- *Caso queira pagar numa quantidade menor de parcelas, conseguimos diminuir o valor parcelado.*\n\n`;
