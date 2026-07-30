@@ -50,7 +50,7 @@ export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[])
     const n = Number(op.semJurosAte);
     txt += `✅ R$ ${fmtMoney(op.precoPix)} EM ATÉ ${n}X SEM JUROS\n`;
   }
-  if (destaqueRow) txt += `💳 R$ ${fmtMoney(destaqueRow.valor)} EM ${op.parcelaDestaque}X NO CARTÃO (TOTAL: R$ ${fmtMoney(destaqueRow.total)})\n`;
+  if (destaqueRow) txt += `💳 ${op.parcelaDestaque}X DE R$ ${fmtMoney(destaqueRow.valor)} NO CARTÃO (TOTAL: R$ ${fmtMoney(destaqueRow.total)})\n`;
   txt += `- *Caso queira pagar numa quantidade menor de parcelas, conseguimos diminuir o valor parcelado.*\n\n`;
   txt += `⚠️ *Valor sujeito a alteração sem aviso prévio e disponibilidade.*`;
 
