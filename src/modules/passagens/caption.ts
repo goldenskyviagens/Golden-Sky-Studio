@@ -1,4 +1,4 @@
-import { FlightOption, bagagemLinhas, isRoundTrip, routeLabel } from "@/core/data/flights";
+import { FlightOption, bagagemLinhas, isRoundTrip, routeLabel, trechoAirportChanges } from "@/core/data/flights";
 import { TaxaParcela, installmentTable } from "@/core/data/installments";
 import { fmtMoney } from "@/core/data/money";
 
@@ -28,6 +28,20 @@ export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[])
     txt += `📅 *${op.trechos[1].label || "Volta"}:* ${op.trechos[1].data || "—"}\n`;
   }
   txt += `👥 ${op.passageiros} Passageiro${op.passageiros > 1 ? "s" : ""}${op.bebes > 0 ? ` (${op.bebes} bebê${op.bebes > 1 ? "s" : ""})` : ""}\n\n`;
+
+  // Troca de aeroporto na conexão (pousa num aeroporto, embarca em outro na
+  // mesma cidade) precisa ser avisada de forma explícita — o cliente não
+  // pode ser pego de surpresa precisando se deslocar entre aeroportos.
+  const avisosAeroporto = op.trechos.flatMap((t) =>
+    trechoAirportChanges(t)
+      .filter((info): info is NonNullable<typeof info> => Boolean(info))
+      .map((info) => `${t.label || "Trecho"}: desembarque em *${info.deIata}* e embarque em *${info.paraIata}* (${info.cidade}).`)
+  );
+  if (avisosAeroporto.length) {
+    txt += `⚠️ *ATENÇÃO: TROCA DE AEROPORTO NA CONEXÃO*\n`;
+    avisosAeroporto.forEach((a) => (txt += `${a}\n`));
+    txt += `\n`;
+  }
 
   txt += `🎒 *O que está incluso:*\n`;
   bagagemLinhas(op).forEach((l) => (txt += `✔ ${l}\n`));

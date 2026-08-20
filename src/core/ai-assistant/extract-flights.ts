@@ -37,6 +37,7 @@ IMPORTANTE:
 - Cada trecho tem 1 "segmento" se for voo direto, ou 2+ segmentos se tiver conexão — nesse caso o número de "conexoes" é sempre (número de segmentos - 1), na ordem entre cada par de segmentos consecutivos, com o tempo de espera no aeroporto de conexão.
 - Sempre inclua o número do voo de cada segmento quando visível na imagem.
 - Para o campo "iata" de cada conexão, identifique o aeroporto exato onde a escala acontece (ex: São Paulo tem GRU e CGH, Rio de Janeiro tem GIG e SDU) — use o código IATA visível na imagem para não deixar ambíguo qual aeroporto da cidade é.
+- Preste atenção especial quando a conexão envolve troca de aeroporto (o "destinoAeroporto" de um segmento é diferente do "origemAeroporto" do segmento seguinte, mesmo sendo a mesma cidade — ex: chega em CGH e o próximo voo sai de GRU). Extraia os códigos IATA de cada segmento exatamente como aparecem na imagem, sem igualar os dois só porque é a mesma cidade — essa informação é crítica pro cliente.
 - Se houver mais de uma opção comparável (preços diferentes pra mesma rota), crie uma entrada em "opcoes" para cada uma.
 - Datas sempre com ano (assuma o ano indicado na imagem ou o ano corrente mais próximo).
 - Se não tiver certeza de um campo, deixe vazio. Responda SOMENTE com o JSON.`;

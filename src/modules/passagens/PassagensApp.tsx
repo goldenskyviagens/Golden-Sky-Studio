@@ -18,7 +18,7 @@ import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { buildCaption } from "./caption";
 import { FlightCard } from "./components/FlightCard";
 import { downloadFlightCard } from "./download-card";
-import { NAVY, GOLD } from "./theme";
+import { NAVY, GOLD } from "@/core/render-engine/theme";
 
 interface PendingImage {
   file: File;

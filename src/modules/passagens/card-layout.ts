@@ -1,6 +1,8 @@
-import { FlightOption } from "@/core/data/flights";
-import { drawClockIcon, drawPlaneIcon, roundRectPath, truncateText } from "@/core/render-engine/canvas-primitives";
-import { GOLD, NAVY_DARK } from "./theme";
+import { AirportChangeInfo, FlightOption, trechoAirportChanges } from "@/core/data/flights";
+import { drawAlertIcon, drawClockIcon, drawPlaneIcon, roundRectPath, truncateText } from "@/core/render-engine/canvas-primitives";
+import { GOLD, NAVY_DARK } from "@/core/render-engine/theme";
+
+const WARNING = "#b3441a";
 
 interface OptionBlock {
   pillY: number;
@@ -14,6 +16,8 @@ interface OptionBlock {
   destinoAeroporto: string;
   duracaoTotal: string;
   paradas: string[];
+  hasAirportChange: boolean;
+  airportChanges: (AirportChangeInfo | null)[];
   segStartY: number;
   segEndY: number;
   segs: FlightOption["trechos"][number]["segmentos"];
@@ -38,6 +42,9 @@ export function buildOptionLines(op: FlightOption): OptionLines {
     const first = segs[0];
     const last = segs[segs.length - 1];
     const paradas = t.conexoes.map((c) => (c.local ? `${c.local}${c.iata ? " (" + c.iata + ")" : ""}` : "")).filter(Boolean);
+    const airportChanges = trechoAirportChanges(t);
+    const hasAirportChange = airportChanges.some(Boolean);
+    if (hasAirportChange) y += 12; // espaço extra pro aviso "MUDANÇA DE AEROPORTO" acima da linha
 
     const pillY = y;
     y += 30;
@@ -63,6 +70,8 @@ export function buildOptionLines(op: FlightOption): OptionLines {
       destinoAeroporto: last.destinoAeroporto || "",
       duracaoTotal: t.duracaoTotal || "",
       paradas,
+      hasAirportChange,
+      airportChanges,
       segStartY,
       segEndY,
       segs,
@@ -124,7 +133,7 @@ export function drawOptionOnCanvas(ctx: CanvasRenderingContext2D, op: FlightOpti
     const lineEndX = x + width - Math.max(rightTimeW, 26) - 16 - 8;
     if (lineEndX > lineStartX) {
       ctx.save();
-      ctx.strokeStyle = b.paradas.length ? GOLD : "rgba(255,255,255,0.35)";
+      ctx.strokeStyle = b.hasAirportChange ? WARNING : b.paradas.length ? GOLD : "rgba(255,255,255,0.35)";
       ctx.lineWidth = 1.2;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -133,7 +142,7 @@ export function drawOptionOnCanvas(ctx: CanvasRenderingContext2D, op: FlightOpti
       ctx.stroke();
       ctx.restore();
 
-      const arrowColor = b.paradas.length ? GOLD : "rgba(255,255,255,0.5)";
+      const arrowColor = b.hasAirportChange ? WARNING : b.paradas.length ? GOLD : "rgba(255,255,255,0.5)";
       if (b.paradas.length) {
         ctx.fillStyle = arrowColor;
         ctx.beginPath();
@@ -153,9 +162,15 @@ export function drawOptionOnCanvas(ctx: CanvasRenderingContext2D, op: FlightOpti
       const midX = (lineStartX + lineEndX) / 2;
       ctx.textAlign = "center";
       let ly = lineY - 8;
+      if (b.hasAirportChange) {
+        ctx.font = "800 9.5px 'Segoe UI', sans-serif";
+        ctx.fillStyle = WARNING;
+        ctx.fillText("⚠ MUDANÇA DE AEROPORTO", midX, ly);
+        ly -= 12;
+      }
       if (b.paradas.length) {
         ctx.font = "400 10px 'Segoe UI', sans-serif";
-        ctx.fillStyle = GOLD;
+        ctx.fillStyle = b.hasAirportChange ? WARNING : GOLD;
         ctx.fillText(`${b.paradas.length} parada${b.paradas.length > 1 ? "s" : ""} ${b.paradas.join(", ")}`, midX, ly);
         ly -= 12;
       } else {
@@ -200,19 +215,27 @@ export function drawOptionOnCanvas(ctx: CanvasRenderingContext2D, op: FlightOpti
         sy += 20;
         if (idx < b.segs.length - 1) {
           const c = b.conexoes[idx] || { duracao: "", local: "", iata: "" };
-          const connText = `${c.duracao || "—"} de conexão em ${c.local || "—"}${c.iata ? " (" + c.iata + ")" : ""}`;
-          ctx.font = "600 10px 'Segoe UI', sans-serif";
-          const clockSize = 11;
-          const maxPillTextWidth = x + width - segX - (clockSize + 6) - 16 - 4;
+          const mudanca = b.airportChanges[idx];
+          const connText = mudanca
+            ? `${c.duracao ? c.duracao + " · " : ""}Mudança de aeroporto em ${mudanca.cidade}: ${mudanca.deIata} → ${mudanca.paraIata}`
+            : `${c.duracao || "—"} de conexão em ${c.local || "—"}${c.iata ? " (" + c.iata + ")" : ""}`;
+          ctx.font = mudanca ? "700 10px 'Segoe UI', sans-serif" : "600 10px 'Segoe UI', sans-serif";
+          const iconSize = 11;
+          const maxPillTextWidth = x + width - segX - (iconSize + 6) - 16 - 4;
           const connTextFit = truncateText(ctx, connText, maxPillTextWidth);
           const tw = ctx.measureText(connTextFit).width;
-          const pillW = clockSize + 6 + tw + 16;
+          const pillW = iconSize + 6 + tw + 16;
           roundRectPath(ctx, segX, yTop + sy, pillW, 18, 5);
-          ctx.fillStyle = "rgba(201,162,39,0.9)";
+          ctx.fillStyle = mudanca ? WARNING : "rgba(201,162,39,0.9)";
           ctx.fill();
-          drawClockIcon(ctx, segX + 10, yTop + sy + 9, clockSize, NAVY_DARK);
-          ctx.fillStyle = NAVY_DARK;
-          ctx.fillText(connTextFit, segX + 10 + clockSize / 2 + 6, yTop + sy + 12);
+          if (mudanca) {
+            drawAlertIcon(ctx, segX + 10, yTop + sy + 9, iconSize, "#fff");
+            ctx.fillStyle = "#fff";
+          } else {
+            drawClockIcon(ctx, segX + 10, yTop + sy + 9, iconSize, NAVY_DARK);
+            ctx.fillStyle = NAVY_DARK;
+          }
+          ctx.fillText(connTextFit, segX + 10 + iconSize / 2 + 6, yTop + sy + 12);
           sy += 22;
         }
       });

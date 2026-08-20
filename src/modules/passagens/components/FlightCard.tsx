@@ -1,5 +1,5 @@
 import { FlightOption } from "@/core/data/flights";
-import { GOLD, NAVY_DARK } from "../theme";
+import { GOLD, NAVY_DARK } from "@/core/render-engine/theme";
 import { TrechoBlock } from "./TrechoBlock";
 
 export function FlightCard({ opcoes }: { opcoes: FlightOption[] }) {

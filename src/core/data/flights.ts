@@ -59,6 +59,28 @@ function randomId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+// Extrai a sigla IATA de um campo "aeroporto" no formato "IATA · Nome completo".
+export function extractIata(aeroporto: string): string {
+  return (aeroporto || "").split(" · ")[0].trim().toUpperCase();
+}
+
+export interface AirportChangeInfo {
+  cidade: string;
+  deIata: string;
+  paraIata: string;
+}
+
+// Detecta troca de aeroporto numa conexão: o voo pousa num aeroporto e o
+// próximo decola de outro aeroporto diferente na mesma cidade (ex: CGH ➜ GRU
+// em São Paulo, GIG ➜ SDU no Rio). Diferente de uma conexão comum, o
+// passageiro precisa se deslocar entre aeroportos — precisa ser avisado.
+export function detectAirportChange(segAnterior: Segmento, segProximo: Segmento): AirportChangeInfo | null {
+  const deIata = extractIata(segAnterior.destinoAeroporto);
+  const paraIata = extractIata(segProximo.origemAeroporto);
+  if (!deIata || !paraIata || deIata === paraIata) return null;
+  return { cidade: segAnterior.destino || segProximo.origemCidade || "", deIata, paraIata };
+}
+
 export function baggageFromAirlines(cias: (string | undefined)[]) {
   const set = new Set((cias || []).map((a) => (a || "").toUpperCase()));
   if ([...set].some((a) => a.includes("AZUL"))) return "mala10";
@@ -98,7 +120,7 @@ export function emptyOption(): FlightOption {
   };
 }
 
-export function bagagemLinhas(op: FlightOption): string[] {
+export function bagagemLinhas(op: { bagagemPreset: string; bagagemCustom: string }): string[] {
   if (op.bagagemPreset === "custom") return op.bagagemCustom.split("\n").map((s) => s.trim()).filter(Boolean);
   const preset = BAGAGEM_PRESETS.find((b) => b.id === op.bagagemPreset);
   return preset ? preset.linhas : [];
@@ -117,6 +139,13 @@ export function routeLabel(trechos: Trecho[]): string {
   }
   const points = [firstOrigin, ...trechos.map((t) => t.segmentos[t.segmentos.length - 1]?.destino || "")];
   return points.join(" ➜ ");
+}
+
+// Uma entrada por conexão do trecho (segmentos.length - 1), na mesma ordem —
+// null quando a conexão é comum, preenchida quando há troca de aeroporto.
+export function trechoAirportChanges(trecho: Trecho): (AirportChangeInfo | null)[] {
+  const segs = trecho.segmentos.filter((s) => s.origemCidade || s.destino);
+  return segs.slice(0, -1).map((s, idx) => detectAirportChange(s, segs[idx + 1]));
 }
 
 export function isRoundTrip(trechos: Trecho[]): boolean {

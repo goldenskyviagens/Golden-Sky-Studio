@@ -1,27 +1,13 @@
 import { FlightOption } from "@/core/data/flights";
 import { roundRectPath } from "@/core/render-engine/canvas-primitives";
-import { GOLD, NAVY_DARK } from "./theme";
+import { loadImage } from "@/core/render-engine/load-image";
+import { BRAND_LOGO_SRC, GOLD, NAVY_DARK } from "@/core/render-engine/theme";
 import { buildOptionLines, drawOptionOnCanvas } from "./card-layout";
-
-const LOGO_SRC = "/branding/logo-golden-sky.png";
-let logoImagePromise: Promise<HTMLImageElement> | null = null;
-
-function loadLogoImage(): Promise<HTMLImageElement> {
-  if (!logoImagePromise) {
-    logoImagePromise = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Não consegui carregar a logo."));
-      img.src = LOGO_SRC;
-    });
-  }
-  return logoImagePromise;
-}
 
 // Motor de renderização em duas camadas: DOM para prévia, Canvas para
 // exportação PNG em alta resolução — gera o arquivo final para download.
 export async function downloadFlightCard(active: FlightOption): Promise<void> {
-  const logo = await loadLogoImage();
+  const logo = await loadImage(BRAND_LOGO_SRC);
 
   const cardWidth = 420;
   const padding = 18;
