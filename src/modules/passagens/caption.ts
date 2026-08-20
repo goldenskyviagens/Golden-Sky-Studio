@@ -6,26 +6,30 @@ import { fmtMoney } from "@/core/data/money";
 // tabela de parcelamento configurável). Lógica preservada 1:1 do gerador original.
 export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[]): string {
   if (!op) return "";
-  const multiDestino = op.trechos.length > 1 && !isRoundTrip(op.trechos);
+  // Ida/volta clássica (rota única + duas datas) só faz sentido com exatamente
+  // 2 trechos. Qualquer outro caso — inclusive um roteiro com 3+ trechos que
+  // volta ao ponto de partida (ex: Natal → BH → São Paulo → Natal) — precisa
+  // listar cada trecho com sua própria rota e data, senão trechos somem da legenda.
+  const idaVoltaClassica = op.trechos.length === 2 && isRoundTrip(op.trechos);
 
   let txt = "";
   if (op.trechos.length === 1) {
     const rota = op.rotulo || routeLabel(op.trechos);
     txt += `✈ *${rota}*\n`;
     txt += `📅 *Data:* ${op.trechos[0].data || "—"}\n`;
-  } else if (multiDestino) {
+  } else if (idaVoltaClassica) {
+    const rota = op.rotulo || routeLabel(op.trechos);
+    txt += `✈ *${rota}*\n`;
+    txt += `📅 *${op.trechos[0].label || "Ida"}:* ${op.trechos[0].data || "—"}\n`;
+    txt += `📅 *${op.trechos[1].label || "Volta"}:* ${op.trechos[1].data || "—"}\n`;
+  } else {
     op.trechos.forEach((t) => {
       const segs = t.segmentos.filter((s) => s.origemCidade || s.destino);
       const origem = segs[0]?.origemCidade || "—";
       const destino = segs[segs.length - 1]?.destino || "—";
       txt += `✈️ *${origem} ➜ ${destino}*\n`;
-      txt += `📅 *Ida:* ${t.data || "—"}\n\n`;
+      txt += `📅 *${t.label || "Trecho"}:* ${t.data || "—"}\n\n`;
     });
-  } else {
-    const rota = op.rotulo || routeLabel(op.trechos);
-    txt += `✈ *${rota}*\n`;
-    txt += `📅 *${op.trechos[0].label || "Ida"}:* ${op.trechos[0].data || "—"}\n`;
-    txt += `📅 *${op.trechos[1].label || "Volta"}:* ${op.trechos[1].data || "—"}\n`;
   }
   txt += `👥 ${op.passageiros} Passageiro${op.passageiros > 1 ? "s" : ""}${op.bebes > 0 ? ` (${op.bebes} bebê${op.bebes > 1 ? "s" : ""})` : ""}\n\n`;
 
