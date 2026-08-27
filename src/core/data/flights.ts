@@ -203,6 +203,16 @@ function chainTrechoGroup(grupo: Trecho[]): Trecho {
   return { ...atual, segmentos, conexoes };
 }
 
+// Checagem "estrita" (sem fallback) de que um trecho encaixa no outro por
+// cidade — usada só pra DECIDIR se duas opções devem ser unidas, nunca pra
+// forçar a junção de coisas que não se conectam de verdade (ex: 2 opções
+// alternativas de preço pra mesma rota, que não devem virar uma só).
+function trechosConectam(a: Trecho, b: Trecho): boolean {
+  const destinoA = cityKey(a.segmentos[a.segmentos.length - 1]?.destino);
+  const origemB = cityKey(b.segmentos[0]?.origemCidade);
+  return Boolean(destinoA) && destinoA === origemB;
+}
+
 // Junta trechos com o mesmo rótulo (ex: 2 "Ida" vindos de reservas/imagens
 // diferentes que se encaixam numa única viagem contínua) num só trecho por
 // rótulo. Feito em código (não pela IA) porque a extração é boa em ler o
@@ -223,6 +233,60 @@ export function mergeConnectingTrechos(trechos: Trecho[]): Trecho[] {
   return ordem.map((key) => {
     const grupo = grupos.get(key)!;
     return grupo.length > 1 ? chainTrechoGroup(grupo) : grupo[0];
+  });
+}
+
+export interface ExtractedOpcao {
+  trechos: Trecho[];
+  precoPix: string;
+}
+
+// Quando a viagem é comprada em reservas separadas (ex: Recife->Guarulhos
+// numa, Guarulhos->Monterrey noutra), a extração às vezes devolve cada
+// reserva como uma "opção" própria em vez de uma só — em vez de 2 opções
+// pra comparar preço, é 1 viagem só com o preço somado. Aqui a gente decide
+// quais opções pertencem à mesma viagem (um trecho de uma bate com o de
+// outra, por cidade — nunca por adivinhação) e une essas, mantendo
+// separadas as que são alternativas de preço de verdade (não se conectam).
+export function mergeConnectingOpcoes(opcoes: ExtractedOpcao[]): ExtractedOpcao[] {
+  const pai = opcoes.map((_, i) => i);
+  function acha(i: number): number {
+    while (pai[i] !== i) i = pai[i];
+    return i;
+  }
+  function une(i: number, j: number) {
+    const ri = acha(i);
+    const rj = acha(j);
+    if (ri !== rj) pai[ri] = rj;
+  }
+
+  for (let i = 0; i < opcoes.length; i++) {
+    for (let j = i + 1; j < opcoes.length; j++) {
+      const conecta = opcoes[i].trechos.some((ti) =>
+        opcoes[j].trechos.some((tj) => cityKey(ti.label) === cityKey(tj.label) && (trechosConectam(ti, tj) || trechosConectam(tj, ti)))
+      );
+      if (conecta) une(i, j);
+    }
+  }
+
+  const grupos = new Map<number, number[]>();
+  const ordem: number[] = [];
+  opcoes.forEach((_, i) => {
+    const raiz = acha(i);
+    if (!grupos.has(raiz)) {
+      grupos.set(raiz, []);
+      ordem.push(raiz);
+    }
+    grupos.get(raiz)!.push(i);
+  });
+
+  return ordem.map((raiz) => {
+    const idxs = grupos.get(raiz)!;
+    const precoTotal = idxs.reduce((soma, i) => soma + (parseFloat(opcoes[i].precoPix) || 0), 0);
+    return {
+      trechos: mergeConnectingTrechos(idxs.flatMap((i) => opcoes[i].trechos)),
+      precoPix: precoTotal > 0 ? String(precoTotal) : "",
+    };
   });
 }
 

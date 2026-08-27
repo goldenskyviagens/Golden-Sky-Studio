@@ -11,7 +11,7 @@ import {
   emptyOption,
   emptySegmento,
   emptyTrecho,
-  mergeConnectingTrechos,
+  mergeConnectingOpcoes,
 } from "@/core/data/flights";
 import { TAXAS_PADRAO, TaxaParcela, installmentTable } from "@/core/data/installments";
 import { fmtMoney } from "@/core/data/money";
@@ -98,8 +98,7 @@ export default function PassagensApp() {
       const parsed = await response.json();
       if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagens.");
 
-      const novasOpcoes = (parsed.opcoes || []).map((op: { trechos?: unknown[]; precoPix?: string }) => {
-        const base = emptyOption();
+      const opcoesExtraidas = (parsed.opcoes || []).map((op: { trechos?: unknown[]; precoPix?: string }) => {
         const trechosRaw = (op.trechos || []) as Array<{
           label?: string;
           data?: string;
@@ -126,12 +125,19 @@ export default function PassagensApp() {
           })),
           conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
         }));
-        // Reservas/imagens diferentes que formam uma única viagem contínua
-        // (ex: Recife->Guarulhos numa, Guarulhos->Monterrey noutra) chegam
-        // como trechos soltos com o mesmo rótulo — junta em um só por rótulo.
-        const trechosMesclados = mergeConnectingTrechos(trechos);
-        const allCias = trechosMesclados.flatMap((t) => t.segmentos.map((s) => s.cia));
-        return { ...base, trechos: trechosMesclados.length ? trechosMesclados : [emptyTrecho("Ida")], bagagemPreset: baggageFromAirlines(allCias), precoPix: op.precoPix || "" };
+        return { trechos, precoPix: op.precoPix || "" };
+      });
+
+      // Reservas/imagens diferentes que formam uma única viagem contínua (ex:
+      // Recife->Guarulhos numa, Guarulhos->Monterrey noutra) às vezes saem em
+      // "opções" separadas — junta as que se conectam por cidade (somando o
+      // preço), mantendo separadas as que são alternativas de preço de verdade.
+      const opcoesMescladas = mergeConnectingOpcoes(opcoesExtraidas);
+
+      const novasOpcoes = opcoesMescladas.map(({ trechos, precoPix }) => {
+        const base = emptyOption();
+        const allCias = trechos.flatMap((t) => t.segmentos.map((s) => s.cia));
+        return { ...base, trechos: trechos.length ? trechos : [emptyTrecho("Ida")], bagagemPreset: baggageFromAirlines(allCias), precoPix };
       });
 
       setOpcoes(novasOpcoes.length ? novasOpcoes : [emptyOption()]);
