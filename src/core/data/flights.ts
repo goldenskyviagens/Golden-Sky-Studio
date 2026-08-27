@@ -148,6 +148,84 @@ export function trechoAirportChanges(trecho: Trecho): (AirportChangeInfo | null)
   return segs.slice(0, -1).map((s, idx) => detectAirportChange(s, segs[idx + 1]));
 }
 
+function cityKey(cidade: string | undefined): string {
+  return (cidade || "").trim().toLowerCase();
+}
+
+// Diferença entre dois horários "HH:MM", assumindo o segundo depois do
+// primeiro no mesmo dia (ou no dia seguinte, se for menor) — usada pra
+// calcular a conexão "entre imagens" que nenhum print mostra escrita.
+function diffHHMM(chegada: string, saida: string): string {
+  const m1 = /^(\d{1,2}):(\d{2})/.exec(chegada || "");
+  const m2 = /^(\d{1,2}):(\d{2})/.exec(saida || "");
+  if (!m1 || !m2) return "";
+  const chMin = Number(m1[1]) * 60 + Number(m1[2]);
+  const saMin = Number(m2[1]) * 60 + Number(m2[2]);
+  let diff = saMin - chMin;
+  if (diff < 0) diff += 24 * 60;
+  const h = Math.floor(diff / 60);
+  const min = diff % 60;
+  return `${h}h${String(min).padStart(2, "0")}`;
+}
+
+// Encadeia um grupo de trechos (mesmo rótulo, ex: vários "Ida" vindos de
+// imagens/reservas diferentes) na ordem cronológica correta — por cidade de
+// origem/destino, não pela ordem em que a IA os extraiu (imagens diferentes
+// podem sair fora de ordem). Calcula a conexão "entre imagens" que nenhum
+// print mostra escrita, a partir da diferença de horário.
+function chainTrechoGroup(grupo: Trecho[]): Trecho {
+  const restantes = [...grupo];
+  const destinos = new Set(restantes.map((t) => cityKey(t.segmentos[t.segmentos.length - 1]?.destino)));
+  const inicioIdx = restantes.findIndex((t) => !destinos.has(cityKey(t.segmentos[0]?.origemCidade)));
+  const [atual] = restantes.splice(inicioIdx >= 0 ? inicioIdx : 0, 1);
+
+  const segmentos = [...atual.segmentos];
+  const conexoes = [...atual.conexoes];
+
+  while (restantes.length) {
+    const ultimoDestino = cityKey(segmentos[segmentos.length - 1]?.destino);
+    let proxIdx = restantes.findIndex((t) => cityKey(t.segmentos[0]?.origemCidade) === ultimoDestino);
+    if (proxIdx < 0) proxIdx = 0; // não encaixou por cidade — concatena mesmo assim, evita perder dados
+    const [proximo] = restantes.splice(proxIdx, 1);
+
+    const segAnterior = segmentos[segmentos.length - 1];
+    const segProximo = proximo.segmentos[0];
+    conexoes.push({
+      id: randomId(),
+      local: segAnterior?.destino || segProximo?.origemCidade || "",
+      iata: extractIata(segAnterior?.destinoAeroporto || "") || extractIata(segProximo?.origemAeroporto || ""),
+      duracao: diffHHMM(segAnterior?.chegada || "", segProximo?.saida || ""),
+    });
+    segmentos.push(...proximo.segmentos);
+    conexoes.push(...proximo.conexoes);
+  }
+
+  return { ...atual, segmentos, conexoes };
+}
+
+// Junta trechos com o mesmo rótulo (ex: 2 "Ida" vindos de reservas/imagens
+// diferentes que se encaixam numa única viagem contínua) num só trecho por
+// rótulo. Feito em código (não pela IA) porque a extração é boa em ler o
+// print, mas não é confiável pra reconstruir a ordem cronológica entre
+// imagens nem fazer a conta do horário de conexão.
+export function mergeConnectingTrechos(trechos: Trecho[]): Trecho[] {
+  const grupos = new Map<string, Trecho[]>();
+  const ordem: string[] = [];
+  trechos.forEach((t) => {
+    const key = (t.label || "").trim().toLowerCase() || t.id;
+    if (!grupos.has(key)) {
+      grupos.set(key, []);
+      ordem.push(key);
+    }
+    grupos.get(key)!.push(t);
+  });
+
+  return ordem.map((key) => {
+    const grupo = grupos.get(key)!;
+    return grupo.length > 1 ? chainTrechoGroup(grupo) : grupo[0];
+  });
+}
+
 export function isRoundTrip(trechos: Trecho[]): boolean {
   if (trechos.length < 2) return false;
   const first = trechos[0];

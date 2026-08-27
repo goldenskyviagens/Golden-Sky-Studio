@@ -11,6 +11,7 @@ import {
   emptyOption,
   emptySegmento,
   emptyTrecho,
+  mergeConnectingTrechos,
 } from "@/core/data/flights";
 import { TAXAS_PADRAO, TaxaParcela, installmentTable } from "@/core/data/installments";
 import { fmtMoney } from "@/core/data/money";
@@ -125,8 +126,12 @@ export default function PassagensApp() {
           })),
           conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
         }));
-        const allCias = trechos.flatMap((t) => t.segmentos.map((s) => s.cia));
-        return { ...base, trechos: trechos.length ? trechos : [emptyTrecho("Ida")], bagagemPreset: baggageFromAirlines(allCias), precoPix: op.precoPix || "" };
+        // Reservas/imagens diferentes que formam uma única viagem contínua
+        // (ex: Recife->Guarulhos numa, Guarulhos->Monterrey noutra) chegam
+        // como trechos soltos com o mesmo rótulo — junta em um só por rótulo.
+        const trechosMesclados = mergeConnectingTrechos(trechos);
+        const allCias = trechosMesclados.flatMap((t) => t.segmentos.map((s) => s.cia));
+        return { ...base, trechos: trechosMesclados.length ? trechosMesclados : [emptyTrecho("Ida")], bagagemPreset: baggageFromAirlines(allCias), precoPix: op.precoPix || "" };
       });
 
       setOpcoes(novasOpcoes.length ? novasOpcoes : [emptyOption()]);
