@@ -9,7 +9,7 @@ export interface ImageBlockInput {
   base64: string;
 }
 
-const EXTRACTION_PROMPT_TEMPLATE = (count: number) => `Você está lendo ${count} print(s) de tela de cotações de voos (Skyscanner, Google Flights, Iddas, consolidador, etc). As imagens podem ser a mesma cotação em partes, ida e volta separadas, ou trechos de uma viagem multi-destino. Extraia em JSON PURO, sem texto antes/depois, sem markdown, neste formato exato:
+const EXTRACTION_PROMPT_TEMPLATE = (count: number, hoje: string) => `Você está lendo ${count} print(s) de tela de cotações de voos (Skyscanner, Google Flights, Iddas, consolidador, etc). Hoje é ${hoje}. As imagens podem ser a mesma cotação em partes, ida e volta separadas, ou trechos de uma viagem multi-destino. Extraia em JSON PURO, sem texto antes/depois, sem markdown, neste formato exato:
 
 {
   "opcoes": [
@@ -40,7 +40,7 @@ IMPORTANTE:
 - Preste atenção especial quando a conexão envolve troca de aeroporto (o "destinoAeroporto" de um segmento é diferente do "origemAeroporto" do segmento seguinte, mesmo sendo a mesma cidade — ex: chega em CGH e o próximo voo sai de GRU). Extraia os códigos IATA de cada segmento exatamente como aparecem na imagem, sem igualar os dois só porque é a mesma cidade — essa informação é crítica pro cliente.
 - Quando 2+ imagens mostrarem voos de rotas diferentes que formam uma viagem contínua (ex: uma imagem "Recife → Guarulhos" e outra "Guarulhos → Monterrey", mesma direção ida/volta) NÃO tente uni-los num trecho só nem calcular a conexão entre eles — isso é feito depois, automaticamente, por código. Só extraia cada trecho exatamente como aparece na imagem, com o "label" certo ("Ida"/"Volta") e a data certa; se o mesmo rótulo aparecer em mais de uma imagem (ex: 2 imagens com "Ida"), pode devolver os 2 trechos "Ida" separados, sem se preocupar em juntá-los.
 - Só crie mais de uma entrada em "opcoes" quando as imagens mostrarem preços/rotas ALTERNATIVOS comparáveis pra mesma viagem (ex: 2 cotações diferentes pra ida e volta entre as mesmas cidades) — nunca porque os trechos vieram de imagens diferentes. Trechos complementares de uma mesma viagem (mesmo com o mesmo rótulo repetido) sempre ficam numa única opção.
-- Datas sempre com ano (assuma o ano indicado na imagem ou o ano corrente mais próximo).
+- Datas sempre com ano. Se o ano não aparecer visível na imagem (comum em datas tipo "qui., 15 de out."), use a data de hoje informada acima pra descobrir o ano certo: pegue o próximo dia/mês igual a esse a partir de hoje (se ainda não passou esse ano, é o ano atual; se já passou, é o ano que vem). NUNCA use um ano passado (tipo 2020, 2023) só porque não apareceu na imagem — cotação de voo é sempre pra data futura.
 - Se não tiver certeza de um campo, deixe vazio. Responda SOMENTE com o JSON.`;
 
 export async function extractFlightsFromImages(images: ImageBlockInput[]) {
@@ -54,6 +54,11 @@ export async function extractFlightsFromImages(images: ImageBlockInput[]) {
     source: { type: "base64" as const, media_type: img.mediaType, data: img.base64 },
   }));
 
+  // O modelo não sabe a data de hoje sozinho — sem isso, quando a imagem não
+  // mostra o ano, ele chuta um ano da época do treinamento (ex: 2020) em vez
+  // do ano certo pra uma cotação futura.
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -64,7 +69,7 @@ export async function extractFlightsFromImages(images: ImageBlockInput[]) {
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: EXTRACTION_PROMPT_TEMPLATE(images.length) }] }],
+      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: EXTRACTION_PROMPT_TEMPLATE(images.length, hoje) }] }],
     }),
   });
 
