@@ -168,6 +168,18 @@ function diffHHMM(chegada: string, saida: string): string {
   return `${h}h${String(min).padStart(2, "0")}`;
 }
 
+// Converte "9h45" -> 585 (minutos) e vice-versa — usado pra somar a duração
+// total do trecho mesclado a partir das partes (ver chainTrechoGroup).
+function parseHoras(str: string): number {
+  const m = /^(\d+)h(\d{1,2})?/.exec((str || "").trim());
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2] || 0);
+}
+
+function formatMinutos(min: number): string {
+  return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
+}
+
 // Encadeia um grupo de trechos (mesmo rótulo, ex: vários "Ida" vindos de
 // imagens/reservas diferentes) na ordem cronológica correta — por cidade de
 // origem/destino, não pela ordem em que a IA os extraiu (imagens diferentes
@@ -200,7 +212,12 @@ function chainTrechoGroup(grupo: Trecho[]): Trecho {
     conexoes.push(...proximo.conexoes);
   }
 
-  return { ...atual, segmentos, conexoes };
+  // Duração total da viagem inteira — soma os pedaços (voos + conexões) em
+  // vez de reaproveitar o "duracaoTotal" de um dos trechos originais, que só
+  // valia pra aquele pedaço isolado (ex: só a perna Recife->Guarulhos).
+  const totalMin = segmentos.reduce((soma, s) => soma + parseHoras(s.duracaoVoo), 0) + conexoes.reduce((soma, c) => soma + parseHoras(c.duracao), 0);
+
+  return { ...atual, segmentos, conexoes, duracaoTotal: totalMin > 0 ? formatMinutos(totalMin) : atual.duracaoTotal };
 }
 
 // Checagem "estrita" (sem fallback) de que um trecho encaixa no outro por
