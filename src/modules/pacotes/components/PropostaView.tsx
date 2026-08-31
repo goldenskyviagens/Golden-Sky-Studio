@@ -1,11 +1,16 @@
 import { CalendarDays, Users, MapPin, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
+import { dateISOtoBR } from "@/core/data/dates";
 import { installmentTable } from "@/core/data/installments";
 import { fmtMoney } from "@/core/data/money";
 import { BRAND_LOGO_SRC, GOLD, NAVY, NAVY_DARK } from "@/core/render-engine/theme";
-import { FlightCard } from "@/modules/passagens/components/FlightCard";
 import { Proposta } from "../types";
-import { PrintButton } from "./PrintButton";
 import { ProdutoCard } from "./ProdutoCard";
+import { VooCard } from "./VooCard";
+
+// Ordem fixa de apresentação na página pública (voo sempre primeiro, depois
+// hospedagem, transfer, passeio, seguro) — independente da ordem em que o
+// agente adicionou cada produto no builder.
+const ORDEM_TIPO: Record<string, number> = { hospedagem: 0, transfer: 1, atividade: 2, seguro: 3 };
 
 function whatsappHref(numero: string, destino: string) {
   const digits = numero.replace(/\D/g, "");
@@ -19,8 +24,11 @@ function whatsappHref(numero: string, destino: string) {
 export function PropostaView({ proposta }: { proposta: Proposta }) {
   const table = installmentTable(proposta.precoPix, proposta.taxas);
   const destaqueRow = table.find((r) => r.n === Number(proposta.parcelaDestaque));
-  const periodo = proposta.dataInicio && proposta.dataFim ? `${proposta.dataInicio} a ${proposta.dataFim}` : proposta.dataInicio || proposta.dataFim || "";
+  const dataInicioBR = dateISOtoBR(proposta.dataInicio);
+  const dataFimBR = dateISOtoBR(proposta.dataFim);
+  const periodo = dataInicioBR && dataFimBR ? `${dataInicioBR} a ${dataFimBR}` : dataInicioBR || dataFimBR || "";
   const temWhatsapp = Boolean(proposta.whatsapp.trim());
+  const produtosOrdenados = [...proposta.produtos].sort((a, b) => (ORDEM_TIPO[a.tipo] ?? 99) - (ORDEM_TIPO[b.tipo] ?? 99));
 
   return (
     <div className="gs-proposta" style={{ background: "#f7f6f2", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#222", paddingBottom: temWhatsapp ? 84 : 32 }}>
@@ -51,9 +59,10 @@ export function PropostaView({ proposta }: { proposta: Proposta }) {
           <InfoChip icon={<Users size={15} color={GOLD} />} label={`${proposta.pessoas} pessoa${proposta.pessoas > 1 ? "s" : ""}`} />
         </div>
 
-        {proposta.produtos.length > 0 && (
+        {(produtosOrdenados.length > 0 || proposta.voos.length > 0) && (
           <Section title="Serviços do pacote">
-            {proposta.produtos.map((p) => (
+            {proposta.voos.length > 0 && <VooCard opcoes={proposta.voos} />}
+            {produtosOrdenados.map((p) => (
               <ProdutoCard key={p.id} produto={p} />
             ))}
           </Section>
@@ -78,14 +87,6 @@ export function PropostaView({ proposta }: { proposta: Proposta }) {
                     </div>
                   </div>
                 ))}
-            </div>
-          </Section>
-        )}
-
-        {proposta.voos.length > 0 && (
-          <Section title="Detalhes do voo">
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <FlightCard opcoes={proposta.voos} />
             </div>
           </Section>
         )}
@@ -133,16 +134,12 @@ export function PropostaView({ proposta }: { proposta: Proposta }) {
 
         {(proposta.validadeProposta || proposta.observacoes.some(Boolean)) && (
           <div style={{ marginTop: 16, fontSize: 11.5, color: "#888", lineHeight: 1.6 }}>
-            {proposta.validadeProposta && <div>Proposta válida até {proposta.validadeProposta}.</div>}
+            {proposta.validadeProposta && <div>Proposta válida até {dateISOtoBR(proposta.validadeProposta)}.</div>}
             {proposta.observacoes.filter(Boolean).map((o, i) => (
               <div key={i}>{o}</div>
             ))}
           </div>
         )}
-
-        <div className="gs-print-hide" style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
-          <PrintButton />
-        </div>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 28, paddingTop: 20, borderTop: "1px solid #e5e3dc", color: "#999", fontSize: 11.5 }}>
           <MapPin size={13} /> Golden Sky Viagens
@@ -180,7 +177,7 @@ export function PropostaView({ proposta }: { proposta: Proposta }) {
 
       <style>{`
         @media print {
-          .gs-cta-sticky, .gs-print-hide { display: none !important; }
+          .gs-cta-sticky { display: none !important; }
           .gs-hero { position: static !important; height: auto !important; min-height: 0 !important; padding-bottom: 16px !important; }
           .gs-hero-gradient { display: none !important; }
           .gs-hero-photo { position: static !important; display: block !important; width: 100% !important; height: 220px !important; border-radius: 8px; }

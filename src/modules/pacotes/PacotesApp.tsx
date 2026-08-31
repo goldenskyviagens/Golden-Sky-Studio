@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket, Plane } from "lucide-react";
+import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket, Plane, ShieldCheck } from "lucide-react";
 import { emptyOption, emptyTrecho, ExtractedOpcao, FlightOption, mergeConnectingOpcoes, Segmento, Trecho } from "@/core/data/flights";
+import { dateBRtoISO } from "@/core/data/dates";
 import { installmentTable } from "@/core/data/installments";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { fmtMoney } from "@/core/data/money";
@@ -13,8 +14,9 @@ import { PropostaView } from "./components/PropostaView";
 
 type ListItemField = "inclusos" | "naoInclusos" | "observacoes";
 
-const ICONE_PRODUTO: Record<ProdutoTipo, typeof Hotel> = { hospedagem: Hotel, transfer: Car, atividade: Ticket };
-const LABEL_PRODUTO: Record<ProdutoTipo, string> = { hospedagem: "Hospedagem", transfer: "Transfer", atividade: "Atividade" };
+const ICONE_PRODUTO: Record<ProdutoTipo, typeof Hotel> = { hospedagem: Hotel, transfer: Car, atividade: Ticket, seguro: ShieldCheck };
+const LABEL_PRODUTO: Record<ProdutoTipo, string> = { hospedagem: "Hospedagem", transfer: "Transfer", atividade: "Atividade", seguro: "Seguro Viagem" };
+const TIPOS_PRODUTO: ProdutoTipo[] = ["hospedagem", "transfer", "atividade", "seguro"];
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,6 +58,20 @@ function mapRawTrechos(trechosRaw: TrechoRaw[]): Trecho[] {
     })),
     conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
   }));
+}
+
+// Deduz destino e datas da viagem a partir dos trechos de voo já extraídos —
+// evita ter que perguntar pra IA de novo algo que já está nos dados (a
+// cidade de chegada da Ida, a data da Ida/Volta).
+function inferirDestinoEDatas(trechos: Trecho[]): { destino: string; dataInicioISO: string; dataFimISO: string } {
+  const idaTrecho = trechos.find((t) => t.label?.toLowerCase().includes("ida")) || trechos[0];
+  const voltaTrecho = trechos.find((t) => t.label?.toLowerCase().includes("volta")) || (trechos.length > 1 ? trechos[trechos.length - 1] : undefined);
+  const destino = idaTrecho?.segmentos[idaTrecho.segmentos.length - 1]?.destino || "";
+  return {
+    destino,
+    dataInicioISO: dateBRtoISO(idaTrecho?.data || ""),
+    dataFimISO: dateBRtoISO(voltaTrecho?.data || ""),
+  };
 }
 
 // Extrai uma mensagem legível de um erro do Supabase (PostgrestError tem
@@ -350,7 +366,14 @@ export default function PacotesApp() {
       }));
 
       const trechosFinal = mergeConnectingOpcoes(opcoesExtraidas)[0]?.trechos || [];
-      update({ voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : [] });
+      const { destino, dataInicioISO, dataFimISO } = inferirDestinoEDatas(trechosFinal);
+      setProposta((prev) => ({
+        ...prev,
+        voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : [],
+        destino: prev.destino || destino,
+        dataInicio: prev.dataInicio || dataInicioISO,
+        dataFim: prev.dataFim || dataFimISO,
+      }));
       setPendingVooImages([]);
     } catch (e) {
       console.error(e);
@@ -384,9 +407,8 @@ export default function PacotesApp() {
       if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagem.");
 
       const trechosFinal = mergeConnectingOpcoes([{ trechos: mapRawTrechos(parsed.voos?.trechos || []), precoPix: "" }])[0]?.trechos || [];
-      const tiposValidos: ProdutoTipo[] = ["hospedagem", "transfer", "atividade"];
       const novosProdutos: Produto[] = (Array.isArray(parsed.produtos) ? parsed.produtos : [])
-        .filter((p: { tipo?: string }) => tiposValidos.includes(p?.tipo as ProdutoTipo))
+        .filter((p: { tipo?: string }) => TIPOS_PRODUTO.includes(p?.tipo as ProdutoTipo))
         .map((p: { tipo: ProdutoTipo; titulo?: string; subtitulo?: string; descricao?: string; itensInclusos?: string[] }) => ({
           ...emptyProduto(p.tipo),
           titulo: p.titulo || "",
@@ -395,10 +417,14 @@ export default function PacotesApp() {
           itensInclusos: Array.isArray(p.itensInclusos) ? p.itensInclusos : [],
         }));
 
+      const inferido = inferirDestinoEDatas(trechosFinal);
       setProposta((prev) => ({
         ...prev,
         voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : prev.voos,
         produtos: [...prev.produtos, ...novosProdutos],
+        destino: prev.destino || parsed.destino || inferido.destino,
+        dataInicio: prev.dataInicio || dateBRtoISO(parsed.dataInicio || "") || inferido.dataInicioISO,
+        dataFim: prev.dataFim || dateBRtoISO(parsed.dataFim || "") || inferido.dataFimISO,
       }));
       if (trechosFinal.length) setMostrarVoo(true);
     } catch (e) {
@@ -479,11 +505,11 @@ export default function PacotesApp() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.6fr", gap: 10 }}>
                 <div>
                   <label style={fieldLabel}>Data início</label>
-                  <input value={proposta.dataInicio} onChange={(e) => update({ dataInicio: e.target.value })} placeholder="DD/MM/AAAA" style={inputStyle} />
+                  <input type="date" value={proposta.dataInicio} onChange={(e) => update({ dataInicio: e.target.value })} style={inputStyle} />
                 </div>
                 <div>
                   <label style={fieldLabel}>Data fim</label>
-                  <input value={proposta.dataFim} onChange={(e) => update({ dataFim: e.target.value })} placeholder="DD/MM/AAAA" style={inputStyle} />
+                  <input type="date" value={proposta.dataFim} onChange={(e) => update({ dataFim: e.target.value })} style={inputStyle} />
                 </div>
                 <div>
                   <label style={fieldLabel}>Pessoas</label>
@@ -539,7 +565,7 @@ export default function PacotesApp() {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                {(["hospedagem", "transfer", "atividade"] as ProdutoTipo[]).map((tipo) => {
+                {TIPOS_PRODUTO.map((tipo) => {
                   const Icone = ICONE_PRODUTO[tipo];
                   return (
                     <button key={tipo} onClick={() => addProduto(tipo)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: NAVY, background: "#fff", border: `1px solid ${NAVY}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>
@@ -763,7 +789,7 @@ export default function PacotesApp() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={fieldLabel}>Proposta válida até</label>
-                  <input value={proposta.validadeProposta} onChange={(e) => update({ validadeProposta: e.target.value })} placeholder="DD/MM/AAAA" style={inputStyle} />
+                  <input type="date" value={proposta.validadeProposta} onChange={(e) => update({ validadeProposta: e.target.value })} style={inputStyle} />
                 </div>
                 <div>
                   <label style={fieldLabel}>WhatsApp de contato (opcional)</label>

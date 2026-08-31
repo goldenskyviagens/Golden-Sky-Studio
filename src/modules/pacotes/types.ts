@@ -16,7 +16,7 @@ export interface DiaRoteiro {
 // resumida com "Ver detalhes" (fotos, descrição, itens inclusos daquele
 // produto específico). Voo continua fora disso, com o modelo próprio
 // (FlightOption) que já lida bem com conexões etc.
-export type ProdutoTipo = "hospedagem" | "transfer" | "atividade";
+export type ProdutoTipo = "hospedagem" | "transfer" | "atividade" | "seguro";
 
 export interface Produto {
   id: string;

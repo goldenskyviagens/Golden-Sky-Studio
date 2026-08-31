@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Car, ChevronDown, Hotel, Ticket, CheckCircle2, X } from "lucide-react";
+import { Car, ChevronDown, Hotel, ShieldCheck, Ticket, CheckCircle2, X } from "lucide-react";
 import { NAVY } from "@/core/render-engine/theme";
 import { Produto } from "../types";
 
-const ICONE_POR_TIPO = { hospedagem: Hotel, transfer: Car, atividade: Ticket };
-const LABEL_POR_TIPO = { hospedagem: "Hospedagem", transfer: "Transfer", atividade: "Atividade" };
+const ICONE_POR_TIPO = { hospedagem: Hotel, transfer: Car, atividade: Ticket, seguro: ShieldCheck };
+const LABEL_POR_TIPO = { hospedagem: "Hospedagem", transfer: "Transfer", atividade: "Atividade", seguro: "Seguro Viagem" };
 
 // Linha resumida (ícone + título + subtítulo) que expande em "Ver detalhes"
 // pra mostrar fotos, descrição e itens inclusos — página como um "site de

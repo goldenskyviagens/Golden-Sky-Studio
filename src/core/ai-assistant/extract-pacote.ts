@@ -14,6 +14,9 @@ const EXTRACTION_PROMPT = `Você está lendo um print de uma cotação de viagem
 Extraia em JSON PURO, sem texto antes/depois, sem markdown, neste formato exato:
 
 {
+  "destino": "cidade/região principal do destino (deduza do hotel, do voo ou da atividade — nome da cidade, nunca sigla IATA)",
+  "dataInicio": "data de início da viagem, formato DD/MM/AAAA (data de ida do voo, ou check-in do hotel)",
+  "dataFim": "data de fim da viagem, formato DD/MM/AAAA (data de volta do voo, ou check-out do hotel)",
   "voos": {
     "trechos": [
       {
@@ -31,9 +34,9 @@ Extraia em JSON PURO, sem texto antes/depois, sem markdown, neste formato exato:
   },
   "produtos": [
     {
-      "tipo": "hospedagem" ou "transfer" ou "atividade",
-      "titulo": "nome do produto (ex: nome do hotel, tipo de transfer, nome do passeio)",
-      "subtitulo": "endereço+categoria (hospedagem) / tipo de veículo (transfer) / data-horário (atividade)",
+      "tipo": "hospedagem" ou "transfer" ou "atividade" ou "seguro",
+      "titulo": "nome do produto (ex: nome do hotel, tipo de transfer, nome do passeio, plano do seguro)",
+      "subtitulo": "endereço+categoria (hospedagem) / tipo de veículo (transfer) / data-horário (atividade) / cobertura principal (seguro)",
       "descricao": "1-2 frases com detalhes adicionais visíveis no print — não invente nada",
       "itensInclusos": ["item 1", "item 2"]
     }
@@ -42,7 +45,8 @@ Extraia em JSON PURO, sem texto antes/depois, sem markdown, neste formato exato:
 
 IMPORTANTE:
 - Se a imagem NÃO mostrar informação de voo, devolva "voos": { "trechos": [] } — não invente.
-- Cada seção de hospedagem/transfer/atividade visível na imagem vira uma entrada em "produtos" — pode ter 0, 1 ou mais de cada tipo. Se não houver nenhuma, devolva "produtos": [].
+- Cada seção de hospedagem/transfer/atividade/seguro visível na imagem vira uma entrada em "produtos" — pode ter 0, 1 ou mais de cada tipo. Se não houver nenhuma, devolva "produtos": [].
+- Se não conseguir deduzir "destino", "dataInicio" ou "dataFim" com confiança, deixe vazio — não invente.
 - "origemCidade" e "destino" (dentro de voos) devem ser SEMPRE nome da cidade, nunca sigla IATA.
 - Cada trecho de voo tem 1 segmento se for direto, ou 2+ se tiver conexão — nesse caso "conexoes" tem sempre (nº de segmentos - 1).
 - NÃO extraia preço, valor nem forma de pagamento de nenhuma seção — isso é sempre preenchido manualmente depois pelo agente, ignore completamente mesmo que apareça no print.

@@ -14,6 +14,7 @@ const DICAS_POR_TIPO: Record<string, string> = {
   hospedagem: `Isto é um print de HOSPEDAGEM (hotel/pousada). "titulo" = nome do hotel. "subtitulo" = endereço/bairro e categoria (ex: "Rua Barão de Itapoan, 60, Salvador — 3 estrelas") ou período de noites (ex: "5 noites"). "itensInclusos" = regime de café da manhã, wifi, cancelamento grátis etc, um item por linha.`,
   transfer: `Isto é um print de TRANSFER/TRASLADO. "titulo" = tipo de serviço (ex: "Transfer Privado"). "subtitulo" = tipo de veículo e capacidade (ex: "Mini van — até 5 pessoas"). "itensInclusos" = cancelamento grátis, ida e volta, motorista bilíngue etc.`,
   atividade: `Isto é um print de ATIVIDADE/PASSEIO. "titulo" = nome do passeio (ex: "City Tour Salvador"). "subtitulo" = data/horário e duração (ex: "Dom. 18/out, 06:30h"). "itensInclusos" = guia, idiomas, transfer incluso, ingressos etc.`,
+  seguro: `Isto é um print de SEGURO VIAGEM. "titulo" = nome/plano do seguro (ex: "Seguro Viagem Internacional"). "subtitulo" = cobertura principal ou vigência (ex: "Cobertura médica USD 60.000 — validade da viagem"). "itensInclusos" = coberturas específicas (assistência médica, bagagem extraviada, cancelamento de viagem etc), um item por linha.`,
 };
 
 const EXTRACTION_PROMPT = (tipo: string) => `Você está lendo um print de uma cotação de viagem (de um fornecedor/operadora, ex: hoteldo, consolidador, etc). ${DICAS_POR_TIPO[tipo] || ""}
