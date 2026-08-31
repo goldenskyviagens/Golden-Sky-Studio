@@ -1,17 +1,29 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor } from "lucide-react";
+import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket } from "lucide-react";
 import { emptyOption, emptyTrecho, FlightOption, Segmento, Trecho } from "@/core/data/flights";
 import { installmentTable } from "@/core/data/installments";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { fmtMoney } from "@/core/data/money";
 import { GOLD, NAVY } from "@/core/render-engine/theme";
-import { deleteProposta, getProposta, listPropostas, saveProposta, uploadFotoCapa } from "./queries";
-import { emptyDiaRoteiro, emptyProposta, Proposta } from "./types";
+import { deleteProposta, getProposta, listPropostas, saveProposta, uploadFoto } from "./queries";
+import { emptyDiaRoteiro, emptyProduto, emptyProposta, Produto, ProdutoTipo, Proposta } from "./types";
 import { PropostaView } from "./components/PropostaView";
 
 type ListItemField = "inclusos" | "naoInclusos" | "observacoes";
+
+const ICONE_PRODUTO: Record<ProdutoTipo, typeof Hotel> = { hospedagem: Hotel, transfer: Car, atividade: Ticket };
+const LABEL_PRODUTO: Record<ProdutoTipo, string> = { hospedagem: "Hospedagem", transfer: "Transfer", atividade: "Atividade" };
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve((r.result as string).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
 
 // Extrai uma mensagem legível de um erro do Supabase (PostgrestError tem
 // message/details/hint/code) ou de um Error genérico — sem isso, todo erro
@@ -105,12 +117,83 @@ export default function PacotesApp() {
     setUploadingFoto(true);
     setError("");
     try {
-      update({ fotoCapaUrl: await uploadFotoCapa(file) });
+      update({ fotoCapaUrl: await uploadFoto(file) });
     } catch (e) {
       console.error(e);
       setError(`Não consegui enviar a foto. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setUploadingFoto(false);
+    }
+  }
+
+  // --- Produtos do pacote (hospedagem/transfer/atividade): print+IA ou manual ---
+  const [lendoProdutoId, setLendoProdutoId] = useState<string | null>(null);
+  const [enviandoFotoProdutoId, setEnviandoFotoProdutoId] = useState<string | null>(null);
+
+  function addProduto(tipo: ProdutoTipo) {
+    setProposta((prev) => ({ ...prev, produtos: [...prev.produtos, emptyProduto(tipo)] }));
+  }
+  function removeProduto(id: string) {
+    setProposta((prev) => ({ ...prev, produtos: prev.produtos.filter((p) => p.id !== id) }));
+  }
+  function updateProduto(id: string, patch: Partial<Produto>) {
+    setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
+  }
+  function updateProdutoItem(produtoId: string, idx: number, value: string) {
+    setProposta((prev) => ({
+      ...prev,
+      produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, itensInclusos: p.itensInclusos.map((v, i) => (i === idx ? value : v)) } : p)),
+    }));
+  }
+  function addProdutoItem(produtoId: string) {
+    setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, itensInclusos: [...p.itensInclusos, ""] } : p)) }));
+  }
+  function removeProdutoItem(produtoId: string, idx: number) {
+    setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, itensInclusos: p.itensInclusos.filter((_, i) => i !== idx) } : p)) }));
+  }
+
+  async function handleProdutoFoto(produtoId: string, file: File | undefined) {
+    if (!file) return;
+    setEnviandoFotoProdutoId(produtoId);
+    setError("");
+    try {
+      const url = await uploadFoto(file);
+      setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, fotos: [...p.fotos, url] } : p)) }));
+    } catch (e) {
+      console.error(e);
+      setError(`Não consegui enviar a foto. Detalhe: ${formatErrorDetail(e)}`);
+    } finally {
+      setEnviandoFotoProdutoId(null);
+    }
+  }
+  function removeProdutoFoto(produtoId: string, idx: number) {
+    setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, fotos: p.fotos.filter((_, i) => i !== idx) } : p)) }));
+  }
+
+  async function handleProdutoPrint(produtoId: string, tipo: ProdutoTipo, file: File | undefined) {
+    if (!file) return;
+    setLendoProdutoId(produtoId);
+    setError("");
+    try {
+      const base64 = await fileToBase64(file);
+      const response = await fetch("/api/extract-produto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: { mediaType: file.type || "image/png", base64 }, tipo }),
+      });
+      const parsed = await response.json();
+      if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagem.");
+      updateProduto(produtoId, {
+        titulo: parsed.titulo || "",
+        subtitulo: parsed.subtitulo || "",
+        descricao: parsed.descricao || "",
+        itensInclusos: Array.isArray(parsed.itensInclusos) ? parsed.itensInclusos : [],
+      });
+    } catch (e) {
+      console.error(e);
+      setError(`Não consegui ler o print. Detalhe: ${formatErrorDetail(e)}`);
+    } finally {
+      setLendoProdutoId(null);
     }
   }
 
@@ -280,13 +363,35 @@ export default function PacotesApp() {
             </div>
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-              <label style={fieldLabel}>Hospedagem</label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                <input value={proposta.hotel} onChange={(e) => update({ hotel: e.target.value })} placeholder="Nome do hotel" style={inputStyle} />
-                <input value={proposta.categoriaHotel} onChange={(e) => update({ categoriaHotel: e.target.value })} placeholder="Categoria (ex: 4 estrelas)" style={inputStyle} />
-                <input value={proposta.regime} onChange={(e) => update({ regime: e.target.value })} placeholder="Regime (ex: Café da manhã incluso)" style={inputStyle} />
-                <input value={proposta.tipoQuarto} onChange={(e) => update({ tipoQuarto: e.target.value })} placeholder="Tipo de quarto/acomodação" style={inputStyle} />
+              <label style={fieldLabel}>Produtos do pacote</label>
+              <p style={{ fontSize: 11.5, color: "#888", marginTop: -4, marginBottom: 10 }}>Cole o print da cotação de cada produto (hospedagem, transfer, passeio) e deixe a IA preencher — ou digite à mão.</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                {(["hospedagem", "transfer", "atividade"] as ProdutoTipo[]).map((tipo) => {
+                  const Icone = ICONE_PRODUTO[tipo];
+                  return (
+                    <button key={tipo} onClick={() => addProduto(tipo)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: NAVY, background: "#fff", border: `1px solid ${NAVY}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>
+                      <Plus size={12} /> <Icone size={13} /> {LABEL_PRODUTO[tipo]}
+                    </button>
+                  );
+                })}
               </div>
+
+              {proposta.produtos.map((produto) => (
+                <ProdutoEditor
+                  key={produto.id}
+                  produto={produto}
+                  lendo={lendoProdutoId === produto.id}
+                  enviandoFoto={enviandoFotoProdutoId === produto.id}
+                  onUpdate={(patch) => updateProduto(produto.id, patch)}
+                  onRemove={() => removeProduto(produto.id)}
+                  onPrint={(file) => handleProdutoPrint(produto.id, produto.tipo, file)}
+                  onFoto={(file) => handleProdutoFoto(produto.id, file)}
+                  onRemoveFoto={(idx) => removeProdutoFoto(produto.id, idx)}
+                  onUpdateItem={(idx, val) => updateProdutoItem(produto.id, idx, val)}
+                  onAddItem={() => addProdutoItem(produto.id)}
+                  onRemoveItem={(idx) => removeProdutoItem(produto.id, idx)}
+                />
+              ))}
             </div>
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
@@ -500,6 +605,99 @@ function ListRow({ value, onChange, onRemove }: { value: string; onChange: (v: s
       <button onClick={onRemove} style={{ border: "none", background: "none", color: "#b3441a", cursor: "pointer" }}>
         <Trash2 size={13} />
       </button>
+    </div>
+  );
+}
+
+// Um bloco por produto do pacote (hospedagem/transfer/atividade): print+IA
+// pra preencher rápido, campos manuais por baixo pra ajustar, e galeria de
+// fotos — tudo isolado num componente próprio porque cada produto tem seu
+// próprio input de arquivo e estado de carregamento.
+function ProdutoEditor({
+  produto,
+  lendo,
+  enviandoFoto,
+  onUpdate,
+  onRemove,
+  onPrint,
+  onFoto,
+  onRemoveFoto,
+  onUpdateItem,
+  onAddItem,
+  onRemoveItem,
+}: {
+  produto: Produto;
+  lendo: boolean;
+  enviandoFoto: boolean;
+  onUpdate: (patch: Partial<Produto>) => void;
+  onRemove: () => void;
+  onPrint: (file: File | undefined) => void;
+  onFoto: (file: File | undefined) => void;
+  onRemoveFoto: (idx: number) => void;
+  onUpdateItem: (idx: number, value: string) => void;
+  onAddItem: () => void;
+  onRemoveItem: (idx: number) => void;
+}) {
+  const printRef = useRef<HTMLInputElement>(null);
+  const fotoRef = useRef<HTMLInputElement>(null);
+  const Icone = ICONE_PRODUTO[produto.tipo];
+
+  return (
+    <div style={{ background: "#faf9f5", border: "1px solid #e5e0d0", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        <Icone size={13} color={NAVY} />
+        <strong style={{ fontSize: 12, color: NAVY }}>{LABEL_PRODUTO[produto.tipo]}</strong>
+        <div style={{ flex: 1 }} />
+        <button onClick={onRemove} style={{ border: "none", background: "none", color: "#b3441a", cursor: "pointer" }}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      <div
+        onClick={() => printRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          onPrint(e.dataTransfer.files?.[0]);
+        }}
+        style={{ border: `1.5px dashed ${GOLD}`, borderRadius: 8, padding: 8, textAlign: "center", cursor: "pointer", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}
+      >
+        <input ref={printRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onPrint(e.target.files?.[0])} />
+        {lendo ? <Loader2 className="animate-spin-slow" size={14} color={NAVY} /> : <ImageIcon size={14} color={GOLD} />}
+        <span style={{ color: "#555", fontSize: 11.5 }}>{lendo ? "Lendo print…" : "Colar/anexar print da cotação"}</span>
+      </div>
+
+      <input value={produto.titulo} onChange={(e) => onUpdate({ titulo: e.target.value })} placeholder="Título (ex: Hotel Porto Salvador)" style={{ ...inputStyle, marginBottom: 5 }} />
+      <input value={produto.subtitulo} onChange={(e) => onUpdate({ subtitulo: e.target.value })} placeholder="Subtítulo (endereço, veículo, data/horário...)" style={{ ...inputStyle, marginBottom: 5 }} />
+      <textarea value={produto.descricao} onChange={(e) => onUpdate({ descricao: e.target.value })} placeholder="Descrição (mostrada em 'Ver detalhes')" style={{ ...inputStyle, minHeight: 44, marginBottom: 5 }} />
+
+      <label style={{ ...fieldLabel, marginTop: 6 }}>Itens inclusos</label>
+      {produto.itensInclusos.map((v, i) => (
+        <ListRow key={i} value={v} onChange={(val) => onUpdateItem(i, val)} onRemove={() => onRemoveItem(i)} />
+      ))}
+      <button onClick={onAddItem} style={{ fontSize: 11.5, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: 8 }}>
+        + adicionar item
+      </button>
+
+      <label style={fieldLabel}>Fotos</label>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {produto.fotos.map((url, i) => (
+          <div key={i} style={{ position: "relative" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={`Foto ${i + 1}`} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }} />
+            <button onClick={() => onRemoveFoto(i)} style={{ position: "absolute", top: -6, right: -6, background: "#b3441a", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", fontSize: 10 }}>
+              <Trash2 size={10} />
+            </button>
+          </div>
+        ))}
+        <div
+          onClick={() => fotoRef.current?.click()}
+          style={{ width: 56, height: 56, borderRadius: 6, border: `1.5px dashed ${GOLD}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fff" }}
+        >
+          <input ref={fotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onFoto(e.target.files?.[0])} />
+          {enviandoFoto ? <Loader2 className="animate-spin-slow" size={14} color={NAVY} /> : <Plus size={16} color={GOLD} />}
+        </div>
+      </div>
     </div>
   );
 }

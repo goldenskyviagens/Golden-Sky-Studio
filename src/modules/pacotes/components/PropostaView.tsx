@@ -1,10 +1,11 @@
-import { CalendarDays, Users, Hotel as HotelIcon, MapPin, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
+import { CalendarDays, Users, MapPin, CheckCircle2, XCircle, MessageCircle } from "lucide-react";
 import { installmentTable } from "@/core/data/installments";
 import { fmtMoney } from "@/core/data/money";
 import { BRAND_LOGO_SRC, GOLD, NAVY, NAVY_DARK } from "@/core/render-engine/theme";
 import { FlightCard } from "@/modules/passagens/components/FlightCard";
 import { Proposta } from "../types";
 import { PrintButton } from "./PrintButton";
+import { ProdutoCard } from "./ProdutoCard";
 
 function whatsappHref(numero: string, destino: string) {
   const digits = numero.replace(/\D/g, "");
@@ -48,17 +49,13 @@ export function PropostaView({ proposta }: { proposta: Proposta }) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: -26, position: "relative", zIndex: 1 }}>
           {periodo && <InfoChip icon={<CalendarDays size={15} color={GOLD} />} label={periodo} />}
           <InfoChip icon={<Users size={15} color={GOLD} />} label={`${proposta.pessoas} pessoa${proposta.pessoas > 1 ? "s" : ""}`} />
-          {proposta.hotel && <InfoChip icon={<HotelIcon size={15} color={GOLD} />} label={proposta.hotel} />}
         </div>
 
-        {(proposta.hotel || proposta.categoriaHotel || proposta.regime || proposta.tipoQuarto) && (
-          <Section title="Hospedagem">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-              {proposta.hotel && <DataPoint label="Hotel" value={proposta.hotel} />}
-              {proposta.categoriaHotel && <DataPoint label="Categoria" value={proposta.categoriaHotel} />}
-              {proposta.regime && <DataPoint label="Regime" value={proposta.regime} />}
-              {proposta.tipoQuarto && <DataPoint label="Acomodação" value={proposta.tipoQuarto} />}
-            </div>
+        {proposta.produtos.length > 0 && (
+          <Section title="Serviços do pacote">
+            {proposta.produtos.map((p) => (
+              <ProdutoCard key={p.id} produto={p} />
+            ))}
           </Section>
         )}
 
@@ -209,15 +206,6 @@ function InfoChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #e5e3dc", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, color: "#333", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
       {icon} {label}
-    </div>
-  );
-}
-
-function DataPoint({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10.5, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: "#222", fontWeight: 600, marginTop: 2 }}>{value}</div>
     </div>
   );
 }

@@ -77,10 +77,11 @@ export async function deleteProposta(id: string): Promise<void> {
   if (error) throw error;
 }
 
-// Envia a foto de capa pro bucket público e devolve a URL definitiva —
-// diferente de Promoções (blob: local, só pra export em Canvas), aqui a foto
-// precisa estar hospedada porque a página é servida pra qualquer visitante.
-export async function uploadFotoCapa(file: File): Promise<string> {
+// Envia uma foto (capa ou de um produto) pro bucket público e devolve a URL
+// definitiva — diferente de Promoções (blob: local, só pra export em
+// Canvas), aqui a foto precisa estar hospedada porque a página é servida
+// pra qualquer visitante.
+export async function uploadFoto(file: File): Promise<string> {
   const supabase = createSupabaseBrowserClient();
   const ext = file.name.split(".").pop() || "jpg";
   const path = `${crypto.randomUUID()}.${ext}`;
