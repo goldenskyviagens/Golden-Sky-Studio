@@ -13,6 +13,19 @@ import { PropostaView } from "./components/PropostaView";
 
 type ListItemField = "inclusos" | "naoInclusos" | "observacoes";
 
+// Extrai uma mensagem legível de um erro do Supabase (PostgrestError tem
+// message/details/hint/code) ou de um Error genérico — sem isso, todo erro
+// virava um aviso genérico que não dizia a causa real.
+function formatErrorDetail(e: unknown): string {
+  if (e && typeof e === "object") {
+    const err = e as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [err.message, err.details, err.hint].filter(Boolean);
+    if (parts.length) return `${parts.join(" — ")}${err.code ? ` (código ${err.code})` : ""}`;
+  }
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
 export default function PacotesApp() {
   const [proposta, setProposta] = useState<Proposta>(emptyProposta());
   const [lista, setLista] = useState<{ id: string; titulo: string; destino: string; updatedAt: string }[]>([]);
@@ -37,7 +50,7 @@ export default function PacotesApp() {
       setLista(await listPropostas());
     } catch (e) {
       console.error(e);
-      setError("Não consegui carregar suas propostas salvas.");
+      setError(`Não consegui carregar suas propostas salvas. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setLoadingLista(false);
     }
@@ -54,7 +67,7 @@ export default function PacotesApp() {
       setProposta(await getProposta(id));
     } catch (e) {
       console.error(e);
-      setError("Não consegui abrir essa proposta.");
+      setError(`Não consegui abrir essa proposta. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setLoadingProposta(false);
     }
@@ -68,7 +81,7 @@ export default function PacotesApp() {
       setLista((prev) => prev.filter((p) => p.id !== id));
     } catch (e) {
       console.error(e);
-      setError("Não consegui apagar essa proposta.");
+      setError(`Não consegui apagar essa proposta. Detalhe: ${formatErrorDetail(e)}`);
     }
   }
 
@@ -81,7 +94,7 @@ export default function PacotesApp() {
       await refreshLista();
     } catch (e) {
       console.error(e);
-      setError("Não consegui salvar a proposta. Confira sua conexão e tente de novo.");
+      setError(`Não consegui salvar a proposta. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setSaving(false);
     }
@@ -95,7 +108,7 @@ export default function PacotesApp() {
       update({ fotoCapaUrl: await uploadFotoCapa(file) });
     } catch (e) {
       console.error(e);
-      setError("Não consegui enviar a foto.");
+      setError(`Não consegui enviar a foto. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setUploadingFoto(false);
     }
