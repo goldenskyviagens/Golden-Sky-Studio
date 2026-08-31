@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket } from "lucide-react";
-import { emptyOption, emptyTrecho, FlightOption, Segmento, Trecho } from "@/core/data/flights";
+import { emptyOption, emptyTrecho, ExtractedOpcao, FlightOption, mergeConnectingOpcoes, Segmento, Trecho } from "@/core/data/flights";
 import { installmentTable } from "@/core/data/installments";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { fmtMoney } from "@/core/data/money";
@@ -274,6 +274,79 @@ export default function PacotesApp() {
     });
   }
 
+  // Print(s) do voo → IA — mesma extração/rota usada em Passagens
+  // (core/data/flights.ts já resolve trechos vindos fora de ordem e opções
+  // separadas que na real são a mesma viagem conectada).
+  const [pendingVooImages, setPendingVooImages] = useState<{ file: File; url: string }[]>([]);
+  const [loadingVoo, setLoadingVoo] = useState(false);
+  const vooFileRef = useRef<HTMLInputElement>(null);
+
+  function addVooImages(files: FileList | null | undefined) {
+    const arr = Array.from(files || []);
+    if (!arr.length) return;
+    setPendingVooImages((prev) => [...prev, ...arr.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
+  }
+  function removeVooPendingImage(i: number) {
+    setPendingVooImages((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function processVooImages() {
+    if (!pendingVooImages.length) return;
+    setLoadingVoo(true);
+    setError("");
+    try {
+      const images = await Promise.all(
+        pendingVooImages.map(async ({ file }) => ({ mediaType: file.type || "image/png", base64: await fileToBase64(file) }))
+      );
+      const response = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images }),
+      });
+      const parsed = await response.json();
+      if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagens.");
+
+      const opcoesExtraidas: ExtractedOpcao[] = (parsed.opcoes || []).map((op: { trechos?: unknown[]; precoPix?: string }) => {
+        const trechosRaw = (op.trechos || []) as Array<{
+          label?: string;
+          data?: string;
+          duracaoTotal?: string;
+          segmentos?: Array<Partial<Segmento>>;
+          conexoes?: Array<{ local?: string; iata?: string; duracao?: string }>;
+        }>;
+        const trechos: Trecho[] = trechosRaw.map((t, idx) => ({
+          id: Math.random().toString(36).slice(2, 9),
+          label: t.label || (idx === 0 ? "Ida" : idx === 1 ? "Volta" : `Trecho ${idx + 1}`),
+          data: t.data || "",
+          duracaoTotal: t.duracaoTotal || "",
+          segmentos: (t.segmentos || []).map((s) => ({
+            id: Math.random().toString(36).slice(2, 9),
+            cia: s.cia || "",
+            numeroVoo: s.numeroVoo || "",
+            origemCidade: s.origemCidade || "",
+            destino: s.destino || "",
+            origemAeroporto: s.origemAeroporto || "",
+            destinoAeroporto: s.destinoAeroporto || "",
+            saida: s.saida || "",
+            chegada: s.chegada || "",
+            duracaoVoo: s.duracaoVoo || "",
+          })),
+          conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
+        }));
+        return { trechos, precoPix: "" };
+      });
+
+      const trechosFinal = mergeConnectingOpcoes(opcoesExtraidas)[0]?.trechos || [];
+      update({ voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : [] });
+      setPendingVooImages([]);
+    } catch (e) {
+      console.error(e);
+      setError(`Não consegui ler os prints do voo. Detalhe: ${formatErrorDetail(e)}`);
+    } finally {
+      setLoadingVoo(false);
+    }
+  }
+
   // --- Taxas de parcelamento (congeladas na proposta salva) ---
   function updateTaxa(n: number, percent: number) {
     setProposta((prev) => ({ ...prev, taxas: prev.taxas.map((t) => (t.n === n ? { ...t, taxaPercent: percent } : t)) }));
@@ -347,6 +420,8 @@ export default function PacotesApp() {
                   e.preventDefault();
                   handleFotoChange(e.dataTransfer.files?.[0]);
                 }}
+                onPaste={(e) => handleFotoChange(e.clipboardData?.files?.[0])}
+                tabIndex={0}
                 style={{ border: `2px dashed ${GOLD}`, borderRadius: 10, padding: 14, textAlign: "center", cursor: "pointer", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
               >
                 <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleFotoChange(e.target.files?.[0])} />
@@ -358,7 +433,7 @@ export default function PacotesApp() {
                 ) : (
                   <ImageIcon size={18} color={GOLD} />
                 )}
-                <span style={{ color: "#555", fontSize: 12.5 }}>{uploadingFoto ? "Enviando foto…" : proposta.fotoCapaUrl ? "Clique pra trocar a foto" : "Clique ou arraste a foto de capa"}</span>
+                <span style={{ color: "#555", fontSize: 12.5 }}>{uploadingFoto ? "Enviando foto…" : proposta.fotoCapaUrl ? "Clique pra trocar a foto (ou cole com Ctrl+V)" : "Clique, arraste ou cole (Ctrl+V) a foto de capa"}</span>
               </div>
             </div>
 
@@ -417,6 +492,40 @@ export default function PacotesApp() {
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
               <label style={fieldLabel}>Detalhes de voo (opcional)</label>
+
+              <div
+                onClick={() => vooFileRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  addVooImages(e.dataTransfer.files);
+                }}
+                onPaste={(e) => addVooImages(e.clipboardData?.files)}
+                tabIndex={0}
+                style={{ border: `2px dashed ${GOLD}`, borderRadius: 10, padding: 14, textAlign: "center", cursor: "pointer", background: "#fafafa", marginBottom: 10 }}
+              >
+                <input ref={vooFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addVooImages(e.target.files)} />
+                <ImageIcon size={18} color={GOLD} style={{ marginBottom: 4 }} />
+                <div style={{ color: "#555", fontSize: 12.5 }}>Clique, arraste ou cole (Ctrl+V) — pode anexar ida e volta juntas</div>
+              </div>
+
+              {pendingVooImages.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+                  {pendingVooImages.map((p, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt="print" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }} />
+                      <button onClick={() => removeVooPendingImage(i)} style={{ position: "absolute", top: -6, right: -6, background: "#b3441a", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer" }}>
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={processVooImages} disabled={loadingVoo} style={{ background: NAVY, color: "#fff", border: "none", borderRadius: 6, padding: "0 12px", height: 36, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {loadingVoo ? <Loader2 className="animate-spin-slow" size={14} /> : `Ler ${pendingVooImages.length} print(s)`}
+                  </button>
+                </div>
+              )}
+
               {!opcaoVoo || opcaoVoo.trechos.length === 0 ? (
                 <button onClick={addVooTrecho} style={{ fontSize: 12, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                   + adicionar detalhes de voo
@@ -660,11 +769,13 @@ function ProdutoEditor({
           e.preventDefault();
           onPrint(e.dataTransfer.files?.[0]);
         }}
+        onPaste={(e) => onPrint(e.clipboardData?.files?.[0])}
+        tabIndex={0}
         style={{ border: `1.5px dashed ${GOLD}`, borderRadius: 8, padding: 8, textAlign: "center", cursor: "pointer", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}
       >
         <input ref={printRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onPrint(e.target.files?.[0])} />
         {lendo ? <Loader2 className="animate-spin-slow" size={14} color={NAVY} /> : <ImageIcon size={14} color={GOLD} />}
-        <span style={{ color: "#555", fontSize: 11.5 }}>{lendo ? "Lendo print…" : "Colar/anexar print da cotação"}</span>
+        <span style={{ color: "#555", fontSize: 11.5 }}>{lendo ? "Lendo print…" : "Clique, arraste ou cole (Ctrl+V) o print da cotação"}</span>
       </div>
 
       <input value={produto.titulo} onChange={(e) => onUpdate({ titulo: e.target.value })} placeholder="Título (ex: Hotel Porto Salvador)" style={{ ...inputStyle, marginBottom: 5 }} />
@@ -692,6 +803,9 @@ function ProdutoEditor({
         ))}
         <div
           onClick={() => fotoRef.current?.click()}
+          onPaste={(e) => onFoto(e.clipboardData?.files?.[0])}
+          tabIndex={0}
+          title="Clique ou cole (Ctrl+V) uma foto"
           style={{ width: 56, height: 56, borderRadius: 6, border: `1.5px dashed ${GOLD}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fff" }}
         >
           <input ref={fotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onFoto(e.target.files?.[0])} />
