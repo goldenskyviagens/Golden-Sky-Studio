@@ -409,6 +409,23 @@ export default function PacotesApp() {
     }
   }
 
+  // Colar (Ctrl+V) só chega numa caixinha específica se ela estiver com foco
+  // (clicada antes) — a maioria dos usuários só cola direto na página, sem
+  // clicar em nada primeiro. Esse listener global pega esse caso: se nada
+  // mais específico estiver focado, a imagem colada vai pro "cole tudo de
+  // uma vez" (o mais útil como destino padrão).
+  useEffect(() => {
+    function handleGlobalPaste(e: ClipboardEvent) {
+      const active = document.activeElement;
+      const foiEmCampoEspecifico = active instanceof HTMLElement && active.tagName !== "BODY" && active.tagName !== "HTML";
+      if (foiEmCampoEspecifico) return;
+      const file = e.clipboardData?.files?.[0];
+      if (file) handlePacoteCompleto(file);
+    }
+    document.addEventListener("paste", handleGlobalPaste);
+    return () => document.removeEventListener("paste", handleGlobalPaste);
+  }, []);
+
   // --- Taxas de parcelamento (congeladas na proposta salva) ---
   function updateTaxa(n: number, percent: number) {
     setProposta((prev) => ({ ...prev, taxas: prev.taxas.map((t) => (t.n === n ? { ...t, taxaPercent: percent } : t)) }));
