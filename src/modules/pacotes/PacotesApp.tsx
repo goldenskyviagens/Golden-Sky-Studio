@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket } from "lucide-react";
+import { Copy, Check, Plus, Trash2, Loader2, Image as ImageIcon, Save, ExternalLink, Smartphone, Monitor, Car, Hotel, Ticket, Plane } from "lucide-react";
 import { emptyOption, emptyTrecho, ExtractedOpcao, FlightOption, mergeConnectingOpcoes, Segmento, Trecho } from "@/core/data/flights";
 import { installmentTable } from "@/core/data/installments";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
@@ -23,6 +23,39 @@ async function fileToBase64(file: File): Promise<string> {
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+}
+
+type TrechoRaw = {
+  label?: string;
+  data?: string;
+  duracaoTotal?: string;
+  segmentos?: Array<Partial<Segmento>>;
+  conexoes?: Array<{ local?: string; iata?: string; duracao?: string }>;
+};
+
+// Converte os trechos crus vindos da extração por IA (mesmo formato de
+// /api/extract) pro shape tipado — reaproveitado tanto pelo print avulso de
+// voo quanto pela cotação completa (que pode trazer voo junto).
+function mapRawTrechos(trechosRaw: TrechoRaw[]): Trecho[] {
+  return trechosRaw.map((t, idx) => ({
+    id: Math.random().toString(36).slice(2, 9),
+    label: t.label || (idx === 0 ? "Ida" : idx === 1 ? "Volta" : `Trecho ${idx + 1}`),
+    data: t.data || "",
+    duracaoTotal: t.duracaoTotal || "",
+    segmentos: (t.segmentos || []).map((s) => ({
+      id: Math.random().toString(36).slice(2, 9),
+      cia: s.cia || "",
+      numeroVoo: s.numeroVoo || "",
+      origemCidade: s.origemCidade || "",
+      destino: s.destino || "",
+      origemAeroporto: s.origemAeroporto || "",
+      destinoAeroporto: s.destinoAeroporto || "",
+      saida: s.saida || "",
+      chegada: s.chegada || "",
+      duracaoVoo: s.duracaoVoo || "",
+    })),
+    conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
+  }));
 }
 
 // Extrai uma mensagem legível de um erro do Supabase (PostgrestError tem
@@ -311,35 +344,10 @@ export default function PacotesApp() {
       const parsed = await response.json();
       if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagens.");
 
-      const opcoesExtraidas: ExtractedOpcao[] = (parsed.opcoes || []).map((op: { trechos?: unknown[]; precoPix?: string }) => {
-        const trechosRaw = (op.trechos || []) as Array<{
-          label?: string;
-          data?: string;
-          duracaoTotal?: string;
-          segmentos?: Array<Partial<Segmento>>;
-          conexoes?: Array<{ local?: string; iata?: string; duracao?: string }>;
-        }>;
-        const trechos: Trecho[] = trechosRaw.map((t, idx) => ({
-          id: Math.random().toString(36).slice(2, 9),
-          label: t.label || (idx === 0 ? "Ida" : idx === 1 ? "Volta" : `Trecho ${idx + 1}`),
-          data: t.data || "",
-          duracaoTotal: t.duracaoTotal || "",
-          segmentos: (t.segmentos || []).map((s) => ({
-            id: Math.random().toString(36).slice(2, 9),
-            cia: s.cia || "",
-            numeroVoo: s.numeroVoo || "",
-            origemCidade: s.origemCidade || "",
-            destino: s.destino || "",
-            origemAeroporto: s.origemAeroporto || "",
-            destinoAeroporto: s.destinoAeroporto || "",
-            saida: s.saida || "",
-            chegada: s.chegada || "",
-            duracaoVoo: s.duracaoVoo || "",
-          })),
-          conexoes: (t.conexoes || []).map((c) => ({ id: Math.random().toString(36).slice(2, 9), local: c.local || "", iata: c.iata || "", duracao: c.duracao || "" })),
-        }));
-        return { trechos, precoPix: "" };
-      });
+      const opcoesExtraidas: ExtractedOpcao[] = (parsed.opcoes || []).map((op: { trechos?: TrechoRaw[] }) => ({
+        trechos: mapRawTrechos(op.trechos || []),
+        precoPix: "",
+      }));
 
       const trechosFinal = mergeConnectingOpcoes(opcoesExtraidas)[0]?.trechos || [];
       update({ voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : [] });
@@ -349,6 +357,55 @@ export default function PacotesApp() {
       setError(`Não consegui ler os prints do voo. Detalhe: ${formatErrorDetail(e)}`);
     } finally {
       setLoadingVoo(false);
+    }
+  }
+
+  const [mostrarVoo, setMostrarVoo] = useState(false);
+  const mostrarVooSecao = mostrarVoo || proposta.voos.length > 0;
+
+  // Cotação completa (1 print com voo + hospedagem + transfer + atividade
+  // juntos, ex: tela de fornecedor tipo hoteldo) — a IA separa tudo sozinha
+  // numa chamada só, em vez de colar um print por produto.
+  const [loadingPacote, setLoadingPacote] = useState(false);
+  const pacoteFileRef = useRef<HTMLInputElement>(null);
+
+  async function handlePacoteCompleto(file: File | undefined) {
+    if (!file) return;
+    setLoadingPacote(true);
+    setError("");
+    try {
+      const base64 = await fileToBase64(file);
+      const response = await fetch("/api/extract-pacote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: { mediaType: file.type || "image/png", base64 } }),
+      });
+      const parsed = await response.json();
+      if (!response.ok) throw new Error(parsed?.error || "Erro ao processar imagem.");
+
+      const trechosFinal = mergeConnectingOpcoes([{ trechos: mapRawTrechos(parsed.voos?.trechos || []), precoPix: "" }])[0]?.trechos || [];
+      const tiposValidos: ProdutoTipo[] = ["hospedagem", "transfer", "atividade"];
+      const novosProdutos: Produto[] = (Array.isArray(parsed.produtos) ? parsed.produtos : [])
+        .filter((p: { tipo?: string }) => tiposValidos.includes(p?.tipo as ProdutoTipo))
+        .map((p: { tipo: ProdutoTipo; titulo?: string; subtitulo?: string; descricao?: string; itensInclusos?: string[] }) => ({
+          ...emptyProduto(p.tipo),
+          titulo: p.titulo || "",
+          subtitulo: p.subtitulo || "",
+          descricao: p.descricao || "",
+          itensInclusos: Array.isArray(p.itensInclusos) ? p.itensInclusos : [],
+        }));
+
+      setProposta((prev) => ({
+        ...prev,
+        voos: trechosFinal.length ? [{ ...emptyOption(), trechos: trechosFinal }] : prev.voos,
+        produtos: [...prev.produtos, ...novosProdutos],
+      }));
+      if (trechosFinal.length) setMostrarVoo(true);
+    } catch (e) {
+      console.error(e);
+      setError(`Não consegui ler a cotação completa. Detalhe: ${formatErrorDetail(e)}`);
+    } finally {
+      setLoadingPacote(false);
     }
   }
 
@@ -444,7 +501,26 @@ export default function PacotesApp() {
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
               <label style={fieldLabel}>Produtos do pacote</label>
-              <p style={{ fontSize: 11.5, color: "#888", marginTop: -4, marginBottom: 10 }}>Cole o print da cotação de cada produto (hospedagem, transfer, passeio) e deixe a IA preencher — ou digite à mão.</p>
+              <p style={{ fontSize: 11.5, color: "#888", marginTop: -4, marginBottom: 10 }}>Cole o print da cotação de cada produto e deixe a IA preencher — ou digite à mão.</p>
+
+              <div
+                onClick={() => pacoteFileRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handlePacoteCompleto(e.dataTransfer.files?.[0]);
+                }}
+                onPaste={(e) => handlePacoteCompleto(e.clipboardData?.files?.[0])}
+                tabIndex={0}
+                style={{ border: `1.5px dashed ${NAVY}`, borderRadius: 8, padding: 10, textAlign: "center", cursor: "pointer", background: "#f4f6fb", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 12 }}
+              >
+                <input ref={pacoteFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handlePacoteCompleto(e.target.files?.[0])} />
+                {loadingPacote ? <Loader2 className="animate-spin-slow" size={14} color={NAVY} /> : <ImageIcon size={14} color={NAVY} />}
+                <span style={{ color: NAVY, fontSize: 11.5, fontWeight: 600 }}>
+                  {loadingPacote ? "Separando os produtos…" : "Ou cole aqui a cotação completa (com tudo junto) e a IA separa sozinha"}
+                </span>
+              </div>
+
               <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                 {(["hospedagem", "transfer", "atividade"] as ProdutoTipo[]).map((tipo) => {
                   const Icone = ICONE_PRODUTO[tipo];
@@ -454,6 +530,9 @@ export default function PacotesApp() {
                     </button>
                   );
                 })}
+                <button onClick={() => setMostrarVoo(true)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: NAVY, background: "#fff", border: `1px solid ${NAVY}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>
+                  <Plus size={12} /> <Plane size={13} /> Voo
+                </button>
               </div>
 
               {proposta.produtos.map((produto) => (
@@ -472,6 +551,88 @@ export default function PacotesApp() {
                   onRemoveItem={(idx) => removeProdutoItem(produto.id, idx)}
                 />
               ))}
+
+              {mostrarVooSecao && (
+                <div style={{ background: "#faf9f5", border: "1px solid #e5e0d0", borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <Plane size={13} color={NAVY} />
+                    <strong style={{ fontSize: 12, color: NAVY }}>Voo</strong>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      onClick={() => {
+                        update({ voos: [] });
+                        setMostrarVoo(false);
+                      }}
+                      style={{ border: "none", background: "none", color: "#b3441a", cursor: "pointer" }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  <div
+                    onClick={() => vooFileRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      addVooImages(e.dataTransfer.files);
+                    }}
+                    onPaste={(e) => addVooImages(e.clipboardData?.files)}
+                    tabIndex={0}
+                    style={{ border: `1.5px dashed ${GOLD}`, borderRadius: 8, padding: 8, textAlign: "center", cursor: "pointer", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}
+                  >
+                    <input ref={vooFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addVooImages(e.target.files)} />
+                    <ImageIcon size={14} color={GOLD} />
+                    <span style={{ color: "#555", fontSize: 11.5 }}>Clique, arraste ou cole (Ctrl+V) — pode anexar ida e volta juntas</span>
+                  </div>
+
+                  {pendingVooImages.length > 0 && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+                      {pendingVooImages.map((p, i) => (
+                        <div key={i} style={{ position: "relative" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url} alt="print" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }} />
+                          <button onClick={() => removeVooPendingImage(i)} style={{ position: "absolute", top: -6, right: -6, background: "#b3441a", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer" }}>
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      ))}
+                      <button onClick={processVooImages} disabled={loadingVoo} style={{ background: NAVY, color: "#fff", border: "none", borderRadius: 6, padding: "0 12px", height: 36, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        {loadingVoo ? <Loader2 className="animate-spin-slow" size={14} /> : `Ler ${pendingVooImages.length} print(s)`}
+                      </button>
+                    </div>
+                  )}
+
+                  {opcaoVoo && opcaoVoo.trechos.length > 0 && (
+                    <>
+                      {opcaoVoo.trechos.map((t) => {
+                        const s = t.segmentos[0];
+                        return (
+                          <div key={t.id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
+                            <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
+                              <input value={t.label} onChange={(e) => updateVooTrecho(t.id, { label: e.target.value })} style={{ ...inputStyle, fontWeight: 700, maxWidth: 100 }} />
+                              <input placeholder="Data DD/MM/AAAA" value={t.data} onChange={(e) => updateVooTrecho(t.id, { data: e.target.value })} style={inputStyle} />
+                              <button onClick={() => removeVooTrecho(t.id)} style={{ border: "none", background: "none", color: "#b3441a", cursor: "pointer" }}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "0.7fr 0.7fr 1fr 1fr 0.6fr 0.6fr", gap: 5 }}>
+                              <input placeholder="Cia" value={s.cia} onChange={(e) => updateVooSegmento(t.id, { cia: e.target.value })} style={inputStyle} />
+                              <input placeholder="Nº voo" value={s.numeroVoo} onChange={(e) => updateVooSegmento(t.id, { numeroVoo: e.target.value })} style={inputStyle} />
+                              <input placeholder="Cidade origem" value={s.origemCidade} onChange={(e) => updateVooSegmento(t.id, { origemCidade: e.target.value })} style={inputStyle} />
+                              <input placeholder="Cidade destino" value={s.destino} onChange={(e) => updateVooSegmento(t.id, { destino: e.target.value })} style={inputStyle} />
+                              <input placeholder="Saída" value={s.saida} onChange={(e) => updateVooSegmento(t.id, { saida: e.target.value })} style={inputStyle} />
+                              <input placeholder="Chegada" value={s.chegada} onChange={(e) => updateVooSegmento(t.id, { chegada: e.target.value })} style={inputStyle} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <button onClick={addVooTrecho} style={{ fontSize: 11.5, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        + adicionar trecho (ida/volta)
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
@@ -493,77 +654,6 @@ export default function PacotesApp() {
               <button onClick={addDia} style={{ fontSize: 12, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 + adicionar dia
               </button>
-            </div>
-
-            <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-              <label style={fieldLabel}>Detalhes de voo (opcional)</label>
-
-              <div
-                onClick={() => vooFileRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  addVooImages(e.dataTransfer.files);
-                }}
-                onPaste={(e) => addVooImages(e.clipboardData?.files)}
-                tabIndex={0}
-                style={{ border: `2px dashed ${GOLD}`, borderRadius: 10, padding: 14, textAlign: "center", cursor: "pointer", background: "#fafafa", marginBottom: 10 }}
-              >
-                <input ref={vooFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addVooImages(e.target.files)} />
-                <ImageIcon size={18} color={GOLD} style={{ marginBottom: 4 }} />
-                <div style={{ color: "#555", fontSize: 12.5 }}>Clique, arraste ou cole (Ctrl+V) — pode anexar ida e volta juntas</div>
-              </div>
-
-              {pendingVooImages.length > 0 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
-                  {pendingVooImages.map((p, i) => (
-                    <div key={i} style={{ position: "relative" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.url} alt="print" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }} />
-                      <button onClick={() => removeVooPendingImage(i)} style={{ position: "absolute", top: -6, right: -6, background: "#b3441a", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer" }}>
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  ))}
-                  <button onClick={processVooImages} disabled={loadingVoo} style={{ background: NAVY, color: "#fff", border: "none", borderRadius: 6, padding: "0 12px", height: 36, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    {loadingVoo ? <Loader2 className="animate-spin-slow" size={14} /> : `Ler ${pendingVooImages.length} print(s)`}
-                  </button>
-                </div>
-              )}
-
-              {!opcaoVoo || opcaoVoo.trechos.length === 0 ? (
-                <button onClick={addVooTrecho} style={{ fontSize: 12, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                  + adicionar detalhes de voo
-                </button>
-              ) : (
-                <>
-                  {opcaoVoo.trechos.map((t) => {
-                    const s = t.segmentos[0];
-                    return (
-                      <div key={t.id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
-                        <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
-                          <input value={t.label} onChange={(e) => updateVooTrecho(t.id, { label: e.target.value })} style={{ ...inputStyle, fontWeight: 700, maxWidth: 100 }} />
-                          <input placeholder="Data DD/MM/AAAA" value={t.data} onChange={(e) => updateVooTrecho(t.id, { data: e.target.value })} style={inputStyle} />
-                          <button onClick={() => removeVooTrecho(t.id)} style={{ border: "none", background: "none", color: "#b3441a", cursor: "pointer" }}>
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "0.7fr 0.7fr 1fr 1fr 0.6fr 0.6fr", gap: 5 }}>
-                          <input placeholder="Cia" value={s.cia} onChange={(e) => updateVooSegmento(t.id, { cia: e.target.value })} style={inputStyle} />
-                          <input placeholder="Nº voo" value={s.numeroVoo} onChange={(e) => updateVooSegmento(t.id, { numeroVoo: e.target.value })} style={inputStyle} />
-                          <input placeholder="Cidade origem" value={s.origemCidade} onChange={(e) => updateVooSegmento(t.id, { origemCidade: e.target.value })} style={inputStyle} />
-                          <input placeholder="Cidade destino" value={s.destino} onChange={(e) => updateVooSegmento(t.id, { destino: e.target.value })} style={inputStyle} />
-                          <input placeholder="Saída" value={s.saida} onChange={(e) => updateVooSegmento(t.id, { saida: e.target.value })} style={inputStyle} />
-                          <input placeholder="Chegada" value={s.chegada} onChange={(e) => updateVooSegmento(t.id, { chegada: e.target.value })} style={inputStyle} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button onClick={addVooTrecho} style={{ fontSize: 12, color: NAVY, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                    + adicionar trecho (ida/volta)
-                  </button>
-                </>
-              )}
             </div>
 
             <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 10, padding: 14, marginBottom: 12 }}>

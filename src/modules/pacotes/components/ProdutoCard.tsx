@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Car, ChevronDown, Hotel, Ticket, CheckCircle2 } from "lucide-react";
+import { Car, ChevronDown, Hotel, Ticket, CheckCircle2, X } from "lucide-react";
 import { NAVY } from "@/core/render-engine/theme";
 import { Produto } from "../types";
 
@@ -15,6 +15,7 @@ const LABEL_POR_TIPO = { hospedagem: "Hospedagem", transfer: "Transfer", ativida
 // server-safe.
 export function ProdutoCard({ produto }: { produto: Produto }) {
   const [aberto, setAberto] = useState(false);
+  const [fotoAberta, setFotoAberta] = useState<number | null>(null);
   const Icone = ICONE_POR_TIPO[produto.tipo];
 
   return (
@@ -43,7 +44,13 @@ export function ProdutoCard({ produto }: { produto: Produto }) {
             <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 0", marginBottom: 4 }}>
               {produto.fotos.map((url, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={i} src={url} alt={`${produto.titulo} ${i + 1}`} style={{ height: 130, width: 170, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                <img
+                  key={i}
+                  src={url}
+                  alt={`${produto.titulo} ${i + 1}`}
+                  onClick={() => setFotoAberta(i)}
+                  style={{ height: 130, width: 170, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "zoom-in" }}
+                />
               ))}
             </div>
           )}
@@ -57,6 +64,22 @@ export function ProdutoCard({ produto }: { produto: Produto }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {fotoAberta !== null && (
+        <div
+          onClick={() => setFotoAberta(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}
+        >
+          <button
+            onClick={() => setFotoAberta(null)}
+            style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+          >
+            <X size={18} color="#fff" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={produto.fotos[fotoAberta]} alt={`${produto.titulo} ${fotoAberta + 1}`} style={{ maxWidth: "92%", maxHeight: "88%", objectFit: "contain", borderRadius: 8 }} />
         </div>
       )}
     </div>
