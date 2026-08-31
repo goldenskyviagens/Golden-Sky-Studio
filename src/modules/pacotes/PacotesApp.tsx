@@ -150,8 +150,8 @@ export default function PacotesApp() {
     setSaving(true);
     setError("");
     try {
-      const id = await saveProposta(proposta);
-      update({ id });
+      const { id, shortCode } = await saveProposta(proposta);
+      update({ id, shortCode });
       await refreshLista();
     } catch (e) {
       console.error(e);
@@ -251,7 +251,10 @@ export default function PacotesApp() {
     }
   }
 
-  const shareUrl = proposta.id && typeof window !== "undefined" ? `${window.location.origin}/proposta/${proposta.id}` : "";
+  const shareUrl =
+    proposta.id && typeof window !== "undefined"
+      ? `${window.location.origin}${proposta.shortCode ? `/p/${proposta.shortCode}` : `/proposta/${proposta.id}`}`
+      : "";
 
   async function handleCopyLink() {
     if (!shareUrl) return;

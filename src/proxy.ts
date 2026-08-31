@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/extract", "/api/extract-promo", "/api/extract-produto", "/api/extract-pacote", "/proposta"];
+const PUBLIC_PATHS = ["/login", "/api/extract", "/api/extract-promo", "/api/extract-produto", "/api/extract-pacote", "/proposta", "/p/"]; // "/p/" com barra: "/p" sozinho bateria com "/pacotes" também (startsWith)
 
 // Protege as rotas do shell autenticado, redirecionando para /login quando
 // não há sessão. Enquanto as credenciais do Supabase não forem configuradas

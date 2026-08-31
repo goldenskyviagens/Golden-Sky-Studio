@@ -31,6 +31,7 @@ export interface Produto {
 
 export interface Proposta {
   id: string; // vazio até salvar pela 1ª vez — depois é o id da linha no Supabase (e o slug do link)
+  shortCode: string; // vazio até salvar — código curto gerado pro link de compartilhamento (/p/<code>)
   titulo: string;
   destino: string;
   dataInicio: string;
@@ -72,6 +73,7 @@ export function emptyProduto(tipo: ProdutoTipo): Produto {
 export function emptyProposta(): Proposta {
   return {
     id: "",
+    shortCode: "",
     titulo: "",
     destino: "",
     dataInicio: "",
