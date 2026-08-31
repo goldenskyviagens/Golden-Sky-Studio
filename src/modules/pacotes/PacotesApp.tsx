@@ -152,13 +152,18 @@ export default function PacotesApp() {
     setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, itensInclusos: p.itensInclusos.filter((_, i) => i !== idx) } : p)) }));
   }
 
-  async function handleProdutoFoto(produtoId: string, file: File | undefined) {
-    if (!file) return;
+  async function handleProdutoFoto(produtoId: string, files: FileList | File[] | null | undefined) {
+    const arr = Array.from(files || []);
+    if (!arr.length) return;
     setEnviandoFotoProdutoId(produtoId);
     setError("");
     try {
-      const url = await uploadFoto(file);
-      setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, fotos: [...p.fotos, url] } : p)) }));
+      // Uma de cada vez (não em paralelo) — evita estourar limite de upload
+      // simultâneo do Supabase quando o agente seleciona várias fotos juntas.
+      for (const file of arr) {
+        const url = await uploadFoto(file);
+        setProposta((prev) => ({ ...prev, produtos: prev.produtos.map((p) => (p.id === produtoId ? { ...p, fotos: [...p.fotos, url] } : p)) }));
+      }
     } catch (e) {
       console.error(e);
       setError(`Não consegui enviar a foto. Detalhe: ${formatErrorDetail(e)}`);
@@ -460,7 +465,7 @@ export default function PacotesApp() {
                   onUpdate={(patch) => updateProduto(produto.id, patch)}
                   onRemove={() => removeProduto(produto.id)}
                   onPrint={(file) => handleProdutoPrint(produto.id, produto.tipo, file)}
-                  onFoto={(file) => handleProdutoFoto(produto.id, file)}
+                  onFoto={(files) => handleProdutoFoto(produto.id, files)}
                   onRemoveFoto={(idx) => removeProdutoFoto(produto.id, idx)}
                   onUpdateItem={(idx, val) => updateProdutoItem(produto.id, idx, val)}
                   onAddItem={() => addProdutoItem(produto.id)}
@@ -741,7 +746,7 @@ function ProdutoEditor({
   onUpdate: (patch: Partial<Produto>) => void;
   onRemove: () => void;
   onPrint: (file: File | undefined) => void;
-  onFoto: (file: File | undefined) => void;
+  onFoto: (files: FileList | null | undefined) => void;
   onRemoveFoto: (idx: number) => void;
   onUpdateItem: (idx: number, value: string) => void;
   onAddItem: () => void;
@@ -790,7 +795,7 @@ function ProdutoEditor({
         + adicionar item
       </button>
 
-      <label style={fieldLabel}>Fotos</label>
+      <label style={fieldLabel}>Fotos (pode selecionar várias de uma vez)</label>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
         {produto.fotos.map((url, i) => (
           <div key={i} style={{ position: "relative" }}>
@@ -803,12 +808,17 @@ function ProdutoEditor({
         ))}
         <div
           onClick={() => fotoRef.current?.click()}
-          onPaste={(e) => onFoto(e.clipboardData?.files?.[0])}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            onFoto(e.dataTransfer.files);
+          }}
+          onPaste={(e) => onFoto(e.clipboardData?.files)}
           tabIndex={0}
-          title="Clique ou cole (Ctrl+V) uma foto"
+          title="Clique, arraste ou cole (Ctrl+V) — pode selecionar várias fotos de uma vez"
           style={{ width: 56, height: 56, borderRadius: 6, border: `1.5px dashed ${GOLD}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fff" }}
         >
-          <input ref={fotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onFoto(e.target.files?.[0])} />
+          <input ref={fotoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => onFoto(e.target.files)} />
           {enviandoFoto ? <Loader2 className="animate-spin-slow" size={14} color={NAVY} /> : <Plus size={16} color={GOLD} />}
         </div>
       </div>
