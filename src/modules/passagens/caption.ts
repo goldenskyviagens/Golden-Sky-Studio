@@ -58,17 +58,26 @@ export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[])
 
   const table = installmentTable(op.precoPix, taxas);
   const destaqueRow = table.find((r) => r.n === Number(op.parcelaDestaque));
+  const semJurosN = Number(op.semJurosAte) || 0;
+  // "Sem juros" pro cliente = a taxa do cartão já embutida no total, não o
+  // preço do Pix repetido — senão as duas linhas mostrariam o mesmo valor.
+  const semJurosRow = semJurosN ? table.find((r) => r.n === semJurosN) : undefined;
+
+  // Desconto do Pix mostrado entre parênteses: comparado com o total "sem
+  // juros" (a opção logo acima na legenda) ou, na falta dela, com a parcela
+  // em destaque — sempre em relação ao valor no cartão que o cliente está vendo.
+  const baseCartao = semJurosRow?.total ?? destaqueRow?.total;
+  const precoPixNum = Number(op.precoPix);
+  const descontoPix = baseCartao && precoPixNum > 0 ? Math.round((1 - precoPixNum / baseCartao) * 100) : null;
 
   txt += `💰 *INVESTIMENTO PARA GARANTIR AGORA:*\n`;
-  txt += `💰 R$ ${fmtMoney(op.precoPix)} NO PIX\n`;
-  if (op.semJurosAte) {
-    // Mostra o valor total, não dividido por parcela: no parcelamento sem
-    // juros da companhia a 1ª parcela costuma vir mais alta (taxas embutidas),
-    // então dividir igualmente pelo número de parcelas seria incorreto.
-    const n = Number(op.semJurosAte);
-    txt += `✅ R$ ${fmtMoney(op.precoPix)} EM ATÉ ${n}X SEM JUROS\n`;
+  if (semJurosRow) txt += `💳 R$ ${fmtMoney(semJurosRow.total)} EM ATÉ ${semJurosN}X SEM JUROS\n`;
+  txt += `💰 R$ ${fmtMoney(op.precoPix)} NO PIX${descontoPix && descontoPix > 0 ? ` (${descontoPix}% de desconto)` : ""}\n`;
+  // Evita repetir a mesma linha quando a parcela em destaque é a mesma do
+  // limite "sem juros" (o total já apareceu acima).
+  if (destaqueRow && Number(op.parcelaDestaque) !== semJurosN) {
+    txt += `💳 ${op.parcelaDestaque}X DE R$ ${fmtMoney(destaqueRow.valor)} NO CARTÃO (TOTAL: R$ ${fmtMoney(destaqueRow.total)})\n`;
   }
-  if (destaqueRow) txt += `💳 ${op.parcelaDestaque}X DE R$ ${fmtMoney(destaqueRow.valor)} NO CARTÃO (TOTAL: R$ ${fmtMoney(destaqueRow.total)})\n`;
   txt += `- *Caso queira pagar numa quantidade menor de parcelas, conseguimos diminuir o valor parcelado.*\n\n`;
   txt += `⚠️ *Valor sujeito a alteração sem aviso prévio e disponibilidade.*`;
 
