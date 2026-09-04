@@ -69,9 +69,8 @@ export function buildCaption(op: FlightOption | undefined, taxas: TaxaParcela[])
   txt += `À vista${descontoPix && descontoPix > 0 ? ` • ${descontoPix}% de desconto` : ""}\n\n`;
   if (destaqueRow) {
     txt += `💳 ${op.parcelaDestaque}X DE R$ ${fmtMoney(destaqueRow.valor)} SEM JUROS\n`;
-    txt += `Total: R$ ${fmtMoney(destaqueRow.total)}\n`;
+    txt += `Total: R$ ${fmtMoney(destaqueRow.total)}\n\n`;
   }
-  txt += `- *Caso queira pagar numa quantidade menor de parcelas, conseguimos diminuir o valor parcelado.*\n\n`;
   txt += `⚠️ *Valor sujeito a alteração sem aviso prévio e disponibilidade.*`;
 
   return txt;
